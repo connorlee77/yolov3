@@ -1,4 +1,11 @@
 # Repo-specific GitIgnore ----------------------------------------------------------------------------------------------
+yolov3_*/
+*.zip
+mnist_data/
+esmir_commands
+fashionmnist_data/
+coco/
+
 *.jpg
 *.jpeg
 *.png

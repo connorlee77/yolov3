@@ -1,12 +1,13 @@
 import argparse
-
+import os
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 
-
 def detect(save_img=False):
+    
     imgsz = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
+
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
@@ -15,6 +16,16 @@ def detect(save_img=False):
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
+
+    resized_input_out = 'resized_input_{}'.format(out)
+    if os.path.exists(resized_input_out):
+        shutil.rmtree(resized_input_out)  # delete output folder
+    os.makedirs(resized_input_out)  # make new output folder
+
+    features_out = 'yolov3_{}'.format(out)
+    if os.path.exists(features_out):
+        shutil.rmtree(features_out)  # delete output folder
+    os.makedirs(features_out)  # make new output folder
 
     # Initialize model
     model = Darknet(opt.cfg, imgsz)
@@ -67,6 +78,7 @@ def detect(save_img=False):
         dataset = LoadStreams(source, img_size=imgsz)
     else:
         save_img = True
+        print(imgsz)
         dataset = LoadImages(source, img_size=imgsz)
 
     # Get names and colors
@@ -78,7 +90,13 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
     for path, img, im0s, vid_cap in dataset:
+
+        fname = os.path.basename(path).split('.')[0]
+
+        cv2.imwrite('resized_input_{}/{}.png'.format(out, fname), img.transpose(1, 2, 0))
+
         img = torch.from_numpy(img).to(device)
+
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
@@ -86,7 +104,16 @@ def detect(save_img=False):
 
         # Inference
         t1 = torch_utils.time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
+        data = model(img, augment=opt.augment)
+        pred, image_path, features = data
+
+        features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+
+        fname = os.path.basename(path).split('.')[0]
+        print(features.cpu().numpy().shape)
+        np.save(os.path.join(features_out, '{}.npy'.format(fname)), features.cpu().numpy())
+        print(os.path.join(features_out, fname))
+
         t2 = torch_utils.time_synchronized()
 
         # to float
@@ -129,6 +156,7 @@ def detect(save_img=False):
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
+                        # print(xyxy)
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
 
             # Print time (inference + NMS)
@@ -155,7 +183,6 @@ def detect(save_img=False):
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
                     vid_writer.write(im0)
-
     if save_txt or save_img:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
         if platform == 'darwin':  # MacOS
@@ -166,9 +193,9 @@ def detect(save_img=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='*.cfg path')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='*.cfg path')
     parser.add_argument('--names', type=str, default='data/coco.names', help='*.names path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
+    parser.add_argument('--weights', type=str, default='weights/yolov3.pt', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
@@ -189,3 +216,4 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         detect()
+

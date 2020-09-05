@@ -2,10 +2,21 @@ import argparse
 import json
 
 from torch.utils.data import DataLoader
-
+from natsort import natsorted
 from models import *
 from utils.datasets import *
 from utils.utils import *
+
+from contextlib import contextmanager,redirect_stderr,redirect_stdout
+from os import devnull
+import matplotlib.pyplot as plt 
+
+@contextmanager
+def suppress_stdout_stderr():
+    """A context manager that redirects stdout and stderr to devnull"""
+    with open(devnull, 'w') as fnull:
+        with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
+            yield (err, out)
 
 
 def test(cfg,
@@ -80,16 +91,27 @@ def test(cfg,
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     for batch_i, (imgs, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+
         imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
         nb, _, height, width = imgs.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
-
+        
         # Disable gradients
         with torch.no_grad():
             # Run model
             t = torch_utils.time_synchronized()
-            inf_out, train_out = model(imgs, augment=augment)  # inference and training outputs
+            inf_out, train_out, features = model(imgs, augment=augment)  # inference and training outputs
+
+            features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+            BATCH_N = features.shape[0]
+            for i in range(BATCH_N):
+                path = paths[i]
+                fname = os.path.basename(path).split('.')[0]
+                # print(features[i].cpu().numpy().shape)
+                npy_path = os.path.join(out, '{}.npy'.format(fname))
+                np.save(npy_path, features[i].cpu().numpy())
+
             t0 += torch_utils.time_synchronized() - t
 
             # Compute loss
@@ -123,7 +145,7 @@ def test(cfg,
             # Append to pycocotools JSON dictionary
             if save_json:
                 # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
-                image_id = int(Path(paths[si]).stem.split('_')[-1])
+                image_id = int(Path(paths[si]).stem.split('_')[-1].replace('frame', '').replace('thumb', ''))
                 box = pred[:, :4].clone()  # xyxy
                 scale_coords(imgs[si].shape[1:], box, shapes[si][0], shapes[si][1])  # to original shape
                 box = xyxy2xywh(box)  # xywh
@@ -162,11 +184,22 @@ def test(cfg,
                                 if len(detected) == nl:  # all targets already located in image
                                     break
 
+
+
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            
+            # arr = [(correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)]
+            # arr = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+            # if len(arr):
+            #     p1, r1, ap1, f11, ap_class1 = ap_per_class(*arr)
+            #     if niou > 1:
+            #         p1, r1, ap1, f11 = p1[:, 0], r1[:, 0], ap1.mean(1), ap1[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
+            #     mp1, mr1, map1, mf11 = p1.mean(), r1.mean(), ap1.mean(), f11.mean()
+            #     # print(map1)
 
         # Plot images
-        if batch_i < 1:
+        if batch_i == 186:
             f = 'test_batch%g_gt.jpg' % batch_i  # filename
             plot_images(imgs, targets, paths=paths, names=names, fname=f)  # ground truth
             f = 'test_batch%g_pred.jpg' % batch_i
@@ -197,30 +230,50 @@ def test(cfg,
         t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz, imgsz, batch_size)  # tuple
         print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
 
+
     # Save JSON
     if save_json and map and len(jdict):
         print('\nCOCO mAP with pycocotools...')
-        imgIds = [int(Path(x).stem.split('_')[-1]) for x in dataloader.dataset.img_files]
-        with open('results.json', 'w') as file:
+        imgIds = [int(Path(x).stem.split('_')[-1].replace('frame', '').replace('thumb', '')) for x in dataloader.dataset.img_files]
+        imgIds.sort()
+
+        with open('{}.json'.format(opt.dataset_name), 'w') as file:
             json.dump(jdict, file)
 
-        try:
-            from pycocotools.coco import COCO
-            from pycocotools.cocoeval import COCOeval
+        from pycocotools.coco import COCO
+        from pycocotools.cocoeval import COCOeval
 
-            # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-            cocoGt = COCO(glob.glob('../coco/annotations/instances_val*.json')[0])  # initialize COCO ground truth api
-            cocoDt = cocoGt.loadRes('results.json')  # initialize COCO pred api
+        # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+        cocoGt = COCO(glob.glob('coco/annotations/instances_{}.json'.format(opt.dataset_name))[0])
+        cocoDt = cocoGt.loadRes('{}.json'.format(opt.dataset_name))  # initialize COCO pred api
 
-            cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
-            cocoEval.params.imgIds = imgIds  # [:32]  # only evaluate these images
-            cocoEval.evaluate()
-            cocoEval.accumulate()
-            cocoEval.summarize()
-            # mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
-        except:
-            print('WARNING: pycocotools must be installed with numpy==1.17 to run correctly. '
-                  'See https://github.com/cocodataset/cocoapi/issues/356')
+        results = np.zeros((len(imgIds), 4))
+        cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+        for i in tqdm(range(len(imgIds))):
+            cocoEval.params.imgIds = imgIds[i]  # only evaluate these images
+
+            with suppress_stdout_stderr():
+                cocoEval.evaluate()
+                cocoEval.accumulate()
+                cocoEval.summarize()
+
+            stats = cocoEval.stats
+
+            ap50_95, ap50, ap75, ap50_95_sm, ap50_95_md, ap50_95_lg = stats[0:6]
+            # print(ap50)
+            results[i, 0] = imgIds[i]
+            results[i, 1] = ap50_95
+            results[i, 2] = ap50
+            results[i, 3] = ap75
+
+        np.save('{}_precisions'.format(opt.dataset_name), results)
+        plt.figure(figsize=(15,4))
+        plt.scatter(results[:,0], results[:,2], s=2)
+        # plt.plot(results[:,0], results[:,2], '--')
+        plt.xlabel('Frame #')
+        plt.ylabel('Avg. Frame Precision')
+        plt.savefig('{}_ap50.svg'.format(opt.dataset_name))
+
 
     # Return results
     maps = np.zeros(nc) + map
@@ -231,10 +284,10 @@ def test(cfg,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='*.cfg path')
-    parser.add_argument('--data', type=str, default='data/coco2014.data', help='*.data path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
-    parser.add_argument('--batch-size', type=int, default=16, help='size of each image batch')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='*.cfg path')
+    parser.add_argument('--data', type=str, default='data/coco2017.data', help='*.data path')
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='weights path')
+    parser.add_argument('--batch-size', type=int, default=1, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
@@ -243,11 +296,17 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
+    parser.add_argument('--dataset_name', type=str, default='test', help='json file and folder names')  # output folder
     opt = parser.parse_args()
-    opt.save_json = opt.save_json or any([x in opt.data for x in ['coco.data', 'coco2014.data', 'coco2017.data']])
     opt.cfg = check_file(opt.cfg)  # check file
     opt.data = check_file(opt.data)  # check file
     print(opt)
+
+    out = opt.output
+    if os.path.exists(out):
+        shutil.rmtree(out)  # delete output folder
+    os.makedirs(out)  # make new output folder
 
     # task = 'test', 'study', 'benchmark'
     if opt.task == 'test':  # (default) test normally

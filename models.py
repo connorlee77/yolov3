@@ -224,6 +224,7 @@ class Darknet(nn.Module):
 
         self.module_defs = parse_model_cfg(cfg)
         self.module_list, self.routs = create_modules(self.module_defs, img_size, cfg)
+
         self.yolo_layers = get_yolo_layers(self)
         # torch_utils.initialize_weights(self)
 
@@ -278,6 +279,7 @@ class Darknet(nn.Module):
                            torch_utils.scale_img(x, s[1]),  # scale
                            ), 0)
 
+        features = None
         for i, module in enumerate(self.module_list):
             name = module.__class__.__name__
             if name in ['WeightedFeatureFusion', 'FeatureConcat']:  # sum, concat
@@ -290,6 +292,9 @@ class Darknet(nn.Module):
                 yolo_out.append(module(x, out))
             else:  # run module directly, i.e. mtype = 'convolutional', 'upsample', 'maxpool', 'batchnorm2d' etc.
                 x = module(x)
+
+            if i == 105:
+                features = x
 
             out.append(x if self.routs[i] else [])
             if verbose:
@@ -310,7 +315,7 @@ class Darknet(nn.Module):
                 x[1][..., 0] = img_size[1] - x[1][..., 0]  # flip lr
                 x[2][..., :4] /= s[1]  # scale
                 x = torch.cat(x, 1)
-            return x, p
+            return x, p, features
 
     def fuse(self):
         # Fuse Conv2d + BatchNorm2d layers throughout model

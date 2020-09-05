@@ -40,7 +40,6 @@ def exif_size(img):
 
     return s
 
-
 class LoadImages:  # for inference
     def __init__(self, path, img_size=416):
         path = str(Path(path))  # os-agnostic
@@ -96,11 +95,24 @@ class LoadImages:  # for inference
             # Read image
             self.count += 1
             img0 = cv2.imread(path)  # BGR
+
+            
+            if img0 is None:
+                return self.__next__()
             assert img0 is not None, 'Image Not Found ' + path
             print('image %g/%g %s: ' % (self.count, self.nF, path), end='')
 
+        shape = img0.shape[:2]
+        new_shape = self.img_size, self.img_size
+
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        H = r*shape[0]
+        W = r*shape[1]
+
+        img_size = (round(W/32)*32, round(H/32)*32)
+        
         # Padded resize
-        img = letterbox(img0, new_shape=self.img_size)[0]
+        img = letterbox(img0, new_shape=img_size, scaleFill=True, auto=False)[0]
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
@@ -271,6 +283,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             else:
                 raise Exception('%s does not exist' % path)
             self.img_files = [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats]
+
+            # Prune empty images
+            pruned_img_files = []
+            for i, x in enumerate(self.img_files):
+                label_file = x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
+                if os.path.isfile(label_file):
+                    pruned_img_files.append(x)
+
+            self.img_files = pruned_img_files
+
         except:
             raise Exception('Error loading data from %s. See %s' % (path, help_url))
 
@@ -292,6 +314,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
                             for x in self.img_files]
 
+        
+
         # Read image shapes (wh)
         sp = path.replace('.txt', '') + '.shapes'  # shapefile path
         try:
@@ -312,6 +336,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             irect = ar.argsort()
             self.img_files = [self.img_files[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
+
             self.shapes = s[irect]  # wh
             ar = ar[irect]
 
@@ -327,13 +352,20 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             self.batch_shapes = np.ceil(np.array(shapes) * img_size / 32. + pad).astype(np.int) * 32
 
+        # for i in range(len(self.img_files)):
+        #     a, b = os.path.basename(self.img_files[i]), os.path.basename(self.label_files[i])
+        #     assert(a.split('.')[0] == b.split('.')[0])
+        #     print(a, b)
+
+        # exit(0)
+
         # Cache labels
         self.imgs = [None] * n
         self.labels = [np.zeros((0, 5), dtype=np.float32)] * n
         create_datasubset, extract_bounding_boxes, labels_loaded = False, False, False
         nm, nf, ne, ns, nd = 0, 0, 0, 0, 0  # number missing, found, empty, datasubset, duplicate
         np_labels_path = str(Path(self.label_files[0]).parent) + '.npy'  # saved labels in *.npy file
-        if os.path.isfile(np_labels_path):
+        if os.path.isfile(np_labels_path) and False:
             s = np_labels_path  # print string
             x = np.load(np_labels_path, allow_pickle=True)
             if len(x) == n:
