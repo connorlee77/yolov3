@@ -249,30 +249,38 @@ def test(cfg,
 
         results = np.zeros((len(imgIds), 4))
         cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
-        for i in tqdm(range(len(imgIds))):
-            cocoEval.params.imgIds = imgIds[i]  # only evaluate these images
+        cocoEval.params.imgIds = imgIds  # only evaluate these images
 
-            with suppress_stdout_stderr():
-                cocoEval.evaluate()
-                cocoEval.accumulate()
-                cocoEval.summarize()
+        cocoEval.evaluate()
+        cocoEval.accumulate()
+        cocoEval.summarize()
 
-            stats = cocoEval.stats
 
-            ap50_95, ap50, ap75, ap50_95_sm, ap50_95_md, ap50_95_lg = stats[0:6]
-            # print(ap50)
-            results[i, 0] = imgIds[i]
-            results[i, 1] = ap50_95
-            results[i, 2] = ap50
-            results[i, 3] = ap75
 
-        np.save('{}_precisions'.format(opt.dataset_name), results)
-        plt.figure(figsize=(15,4))
-        plt.scatter(results[:,0], results[:,2], s=2)
-        # plt.plot(results[:,0], results[:,2], '--')
-        plt.xlabel('Frame #')
-        plt.ylabel('Avg. Frame Precision')
-        plt.savefig('{}_ap50.svg'.format(opt.dataset_name))
+        # for i in tqdm(range(len(imgIds))):
+        #     cocoEval.params.imgIds = imgIds[i]  # only evaluate these images
+
+        #     with suppress_stdout_stderr():
+        #         cocoEval.evaluate()
+        #         cocoEval.accumulate()
+        #         cocoEval.summarize()
+
+        #     stats = cocoEval.stats
+
+        #     ap50_95, ap50, ap75, ap50_95_sm, ap50_95_md, ap50_95_lg = stats[0:6]
+        #     # print(ap50)
+        #     results[i, 0] = imgIds[i]
+        #     results[i, 1] = ap50_95
+        #     results[i, 2] = ap50
+        #     results[i, 3] = ap75
+
+        # np.save('{}_precisions'.format(opt.dataset_name), results)
+        # plt.figure(figsize=(15,4))
+        # plt.scatter(results[:,0], results[:,2], s=2)
+        # # plt.plot(results[:,0], results[:,2], '--')
+        # plt.xlabel('Frame #')
+        # plt.ylabel('Avg. Frame Precision')
+        # plt.savefig('{}_ap50.svg'.format(opt.dataset_name))
 
 
     # Return results
