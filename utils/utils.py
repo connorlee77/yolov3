@@ -488,11 +488,11 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
     merge = True  # merge for best mAP
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
     time_limit = 10.0  # seconds to quit after
-
     t = time.time()
     nc = prediction[0].shape[1] - 5  # number of classes
     multi_label &= nc > 1  # multiple labels per box
     output = [None] * prediction.shape[0]
+
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         x = x[x[:, 4] > conf_thres]  # confidence
@@ -835,11 +835,11 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     C1 = int(x[1])
     C2 = int(x[3])
 
-    entropy = skimage.measure.shannon_entropy(img[C1:C2, R1:R2])
+    # entropy = skimage.measure.shannon_entropy(img[C1:C2, R1:R2])
 
     if label:
-        label = '{} | {:.2f}'.format(label, entropy)
-        print(label)
+        # label = '{} | {:.2f}'.format(label, entropy)
+        # print(label)
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3

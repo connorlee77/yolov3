@@ -103,7 +103,7 @@ def test(cfg,
             t = torch_utils.time_synchronized()
             inf_out, train_out, features = model(imgs, augment=augment)  # inference and training outputs
 
-            features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+            # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
             BATCH_N = features.shape[0]
             for i in range(BATCH_N):
                 path = paths[i]

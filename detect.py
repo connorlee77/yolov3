@@ -3,9 +3,49 @@ import os
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
+import cv2 
+
+class Net(nn.Module):
+    def __init__(self):
+      super(Net, self).__init__()
+      self.fc1 = nn.Linear(255, 80)
+
+    # x represents our data
+    def forward(self, x):
+      x = self.fc1(x)
+      return x
+
+
+def returnCAM(feature_conv, weight_softmax, class_idx, size_upsample):
+    print(size_upsample)
+    nc, h, w = feature_conv.shape
+    output_cam = []
+    for idx in class_idx:
+        cam = weight_softmax[idx].dot(feature_conv.reshape((nc, h*w)))
+        cam = cam.reshape(h, w)
+        # print(cam)
+        # cam = cam - np.min(cam)
+        # cam_img = cam / np.max(cam)
+        # cam_img = np.uint8(255 * cam_img)
+        cam_img = cv2.normalize(cam,None,0,255,cv2.NORM_MINMAX)
+        cam_img = np.uint8(cam_img)
+        output_cam.append(cv2.resize(cam_img, size_upsample[::-1]))
+    return output_cam
+
+
+def make_folder(out):
+    if not os.path.exists(out):
+        os.makedirs(out)  # make new output folder
+
 
 def detect(save_img=False):
     
+    top_net = Net()
+    top_net.load_state_dict(torch.load('fcn_best_test_weights.pt'))
+    params = list(top_net.named_parameters())
+    top_net_weights = params[-2][1].data.cpu().numpy()
+
+
     imgsz = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
 
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
@@ -107,12 +147,16 @@ def detect(save_img=False):
         data = model(img, augment=opt.augment)
         pred, image_path, features = data
 
-        features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+        class_idx = list(range(0,80))
+        size_upsample = im0s.shape[0:2]
+        cam = returnCAM(features.cpu().numpy().squeeze(), top_net_weights, class_idx, size_upsample)
+        
+        # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
 
-        fname = os.path.basename(path).split('.')[0]
-        print(features.cpu().numpy().shape)
-        np.save(os.path.join(features_out, '{}.npy'.format(fname)), features.cpu().numpy())
-        print(os.path.join(features_out, fname))
+        # fname = os.path.basename(path).split('.')[0]
+        # print(features.cpu().numpy().shape)
+        # np.save(os.path.join(features_out, '{}.npy'.format(fname)), features.cpu().numpy())
+        # print(os.path.join(features_out, fname))
 
         t2 = torch_utils.time_synchronized()
 
@@ -171,7 +215,13 @@ def detect(save_img=False):
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'images':
-                    cv2.imwrite(save_path, im0)
+
+                    for i in range(80):
+                        heatmap = cv2.applyColorMap(cam[i], cv2.COLORMAP_JET)
+                        new_img = heatmap*0.5 + im0*0.5
+                        new_folder = os.path.join(out, names[i])
+                        make_folder(new_folder)
+                        cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
@@ -195,7 +245,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='*.cfg path')
     parser.add_argument('--names', type=str, default='data/coco.names', help='*.names path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3.pt', help='weights path')
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='weights path')
     parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')

@@ -115,7 +115,7 @@ if __name__ == '__main__':
 	# for i in tqdm.tqdm(range(dataset.__len__())):
 	# 	dataset.__getitem__(i)
 
-	batch_size = 512
+	batch_size = 256
 	num_workers = 8
 	device = torch.device('cuda:0')
 	epochs = 300
@@ -123,7 +123,7 @@ if __name__ == '__main__':
 
 	model = Net()
 	model.to(device)
-	optimizer = optim.Adam(model.parameters(), lr=1e-4)
+	optimizer = optim.Adam(model.parameters(), lr=1e-3)
 	scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.995, last_epoch=-1)
 	criterion = nn.BCEWithLogitsLoss()
 	
