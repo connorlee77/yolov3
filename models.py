@@ -299,7 +299,7 @@ class Darknet(nn.Module):
             else:  # run module directly, i.e. mtype = 'convolutional', 'upsample', 'maxpool', 'batchnorm2d' etc.
                 x = module(x)
 
-            if i == 105:
+            if i == 80:
                 features = x
 
             out.append(x if self.routs[i] else [])

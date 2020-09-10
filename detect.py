@@ -5,30 +5,43 @@ from utils.datasets import *
 from utils.utils import *
 import cv2 
 
+# class Net(nn.Module):
+#     def __init__(self):
+#       super(Net, self).__init__()
+#       self.fc1 = nn.Linear(1024, 80)
+
+#     # x represents our data
+#     def forward(self, x):
+#       x = self.fc1(x)
+#       return x
+
 class Net(nn.Module):
     def __init__(self):
       super(Net, self).__init__()
-      self.fc1 = nn.Linear(255, 80)
+      self.conv1 = nn.Conv2d(1024, 2048, kernel_size=3, padding=1, padding_mode='reflect')
+      self.GAP =  nn.AdaptiveAvgPool2d((1,1))
+      self.fc1 = nn.Linear(2048, 80)
 
     # x represents our data
     def forward(self, x):
-      x = self.fc1(x)
-      return x
+        B, C, H, W = x.shape
+        x1 = self.conv1(x)
+        x = self.GAP(x1).view(B, -1)
+        x = self.fc1(x)
+        return x, x1
+
 
 
 def returnCAM(feature_conv, weight_softmax, class_idx, size_upsample):
-    print(size_upsample)
+    # generate the class activation maps upsample to 256x256
     nc, h, w = feature_conv.shape
     output_cam = []
     for idx in class_idx:
         cam = weight_softmax[idx].dot(feature_conv.reshape((nc, h*w)))
         cam = cam.reshape(h, w)
-        # print(cam)
-        # cam = cam - np.min(cam)
-        # cam_img = cam / np.max(cam)
-        # cam_img = np.uint8(255 * cam_img)
-        cam_img = cv2.normalize(cam,None,0,255,cv2.NORM_MINMAX)
-        cam_img = np.uint8(cam_img)
+        cam = cam - np.min(cam)
+        cam_img = cam / np.max(cam)
+        cam_img = np.uint8(255 * cam_img)
         output_cam.append(cv2.resize(cam_img, size_upsample[::-1]))
     return output_cam
 
@@ -41,8 +54,10 @@ def make_folder(out):
 def detect(save_img=False):
     
     top_net = Net()
-    top_net.load_state_dict(torch.load('fcn_best_test_weights.pt'))
+    top_net.load_state_dict(torch.load('fcnx1_best_test_weights.pt'))
+
     params = list(top_net.named_parameters())
+    print(params[-2][1].shape)
     top_net_weights = params[-2][1].data.cpu().numpy()
 
 
@@ -53,6 +68,9 @@ def detect(save_img=False):
 
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
+
+    top_net.to(device)
+
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
@@ -130,7 +148,6 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
     for path, img, im0s, vid_cap in dataset:
-
         fname = os.path.basename(path).split('.')[0]
 
         cv2.imwrite('resized_input_{}/{}.png'.format(out, fname), img.transpose(1, 2, 0))
@@ -145,18 +162,22 @@ def detect(save_img=False):
         # Inference
         t1 = torch_utils.time_synchronized()
         data = model(img, augment=opt.augment)
+
         pred, image_path, features = data
 
+        predictions, features = top_net(features)
         class_idx = list(range(0,80))
         size_upsample = im0s.shape[0:2]
         cam = returnCAM(features.cpu().numpy().squeeze(), top_net_weights, class_idx, size_upsample)
         
         # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
-
         # fname = os.path.basename(path).split('.')[0]
-        # print(features.cpu().numpy().shape)
         # np.save(os.path.join(features_out, '{}.npy'.format(fname)), features.cpu().numpy())
-        # print(os.path.join(features_out, fname))
+
+        predictions = torch.sigmoid(predictions).flatten()
+        for i in range(80):
+            if predictions[i] > 0.7:
+                print(names[i])
 
         t2 = torch_utils.time_synchronized()
 
@@ -217,11 +238,17 @@ def detect(save_img=False):
                 if dataset.mode == 'images':
 
                     for i in range(80):
+                        # w,h = size_upsample
+                        # im0 = im0[50:h-50, 50:w-50]
                         heatmap = cv2.applyColorMap(cam[i], cv2.COLORMAP_JET)
-                        new_img = heatmap*0.5 + im0*0.5
+
+                        new_img = heatmap*0.3 + im0*0.5
                         new_folder = os.path.join(out, names[i])
                         make_folder(new_folder)
                         cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                        # unnormalized_heatmap = unnormalized_cam[i]
+                        # np.savetxt(os.path.join(new_folder, os.path.basename(save_path).replace('png', 'txt')), unnormalized_heatmap)
+
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
