@@ -4,11 +4,12 @@ from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
 import cv2 
+import torch
 
 # class Net(nn.Module):
 #     def __init__(self):
 #         super(Net, self).__init__()
-#         self.fc1 = nn.Linear(1024, 80)
+#         self.fc1 = nn.Linear(1024, 1, bias=True)
 
 #     # x represents our data
 #     def forward(self, x):
@@ -19,20 +20,16 @@ import cv2
 class Net(nn.Module):
     def __init__(self):
       super(Net, self).__init__()
-      # self.conv1 = nn.Conv2d(1024, 2048, kernel_size=3, padding=1, padding_mode='reflect')
-      # self.GAP =  nn.AdaptiveAvgPool2d((1,1))
-      self.fc1 = nn.Linear(1024, 512, bias=True)
-      self.fc2 = nn.Linear(512, 80)
+      self.conv1 = nn.Conv2d(1024, 2048, kernel_size=3, padding=1, padding_mode='reflect')
+      self.GAP =  nn.AdaptiveAvgPool2d((1,1))
+      self.fc1 = nn.Linear(2048, 80)
 
     # x represents our data
     def forward(self, x):
         B, C, H, W = x.shape
-        # x = self.conv1(x)
-        # x = self.GAP(x).view(B, -1)
-        x = self.fc1(x.view(B,-1))
-        x = F.relu(x)
-        # x = x.view(B, -1)
-        x = self.fc2(x)
+        x1 = self.conv1(x)
+        x = self.GAP(x1).view(B, -1)
+        x = self.fc1(x)
         return x
 
 
@@ -43,95 +40,42 @@ def returnCAM(feature_conv, weight_softmax, class_idx, size_upsample):
     output_cam = []
     unnormalized_cams = []
 
+    smallest = []
+    biggest = []
     for idx in class_idx:
+
         cam = weight_softmax[idx].dot(feature_conv.reshape((nc, h*w)))
         cam = cam.reshape(h, w)
-        cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
+        
+        # cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
         temp_cam = cam[:]
-        cam = np.maximum(cam, 0)
+
+        biggest.append(np.max(cam))
+        smallest.append(np.min(cam))
+
+
+        cam = cam - np.min(cam)
         cam_img = cam / np.max(cam)
+
         cam_img = np.uint8(255 * cam_img)
         
         output_cam.append(cam_img)
         unnormalized_cams.append(temp_cam)
     
-    return output_cam, unnormalized_cams
+    max_cams = np.stack(unnormalized_cams, axis=0)
+    argmax_maxcam = np.argmax(max_cams, axis=0)
+    max_cams = np.max(max_cams, axis=0)
 
-def gradCAM(base_model, top_net, img, index, device, size_upsample):
-    # generate the class activation maps upsample to 256x256
-    data = base_model(img, augment=opt.augment)
-    pred, image_path, features = data
-    features.retain_grad()
+    unnorm_maxcam = max_cams[:]
+    max_cams = cv2.resize(max_cams, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
 
-    features_pooled =  nn.AdaptiveAvgPool2d((1,1)) (features)
-    scores = top_net(features_pooled)
+    # max_cams = max_cams - (-87)
+    # max_cams = max_cams / (69 - (-87))
+    max_cams = max_cams - np.min(max_cams)
+    max_cams = max_cams / np.max(max_cams)
+    max_cams = np.uint8(255 * max_cams)
 
-    base_model.zero_grad()
-    top_net.zero_grad()
-
-    # one_hot = torch.zeros(scores.size()).to(device)
-    # one_hot[0,index] = 1
-    # one_hot_scores = torch.sum(one_hot*scores)
-    scores[0,index].backward()
-
-    alpha = nn.AdaptiveAvgPool2d((1,1)) (features.grad)
-    cam = torch.zeros(features.shape[2:]).to(device)
-
-    for i, w in enumerate(alpha.squeeze()):
-        cam += w*features[0,i]
-
-
-    cam = F.relu(cam).cpu().detach().numpy()
-    cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
-    
-    # cam = cam - np.min(cam)
-    # cam = cam / np.max(cam)
-
-    # cam = np.uint8(255*cam)
-
-    return cam
-
-
-def gradCAMplusplus(base_model, top_net, img, index, device, size_upsample):
-    # generate the class activation maps upsample to 256x256
-    data = base_model(img, augment=opt.augment)
-    pred, image_path, features = data
-    
-    B, C, H, W = features.shape
-    features.retain_grad()
-
-    features_pooled =  nn.AdaptiveAvgPool2d((1,1)) (features)
-    scores = top_net(features_pooled)
-
-    base_model.zero_grad()
-    top_net.zero_grad()
-
-    scores[0,index].backward()
-
-    A = features
-    dSdA = A.grad
-    dYdA = torch.exp(scores[0,index]) * dSdA
-
-    numerator = dSdA.pow(2)
-    denominator = 2*dSdA.pow(2) + A.sum(dim=(2,3)).view(1,C,1,1)*dSdA.pow(3)
-    # denominator = torch.where(torch.abs(denominator) < 1e-6, denominator, torch.ones_like(denominator))
-    alpha = numerator / (denominator + 1e-8) 
-
-    weights = torch.sum(alpha * dYdA, dim=(2,3))
-
-    cam = torch.sum(weights.view(1,C,1,1)*features, dim=1).squeeze()
-
-    cam = F.relu(cam).cpu().detach().numpy()
-    cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_LINEAR)
-    # cam = np.maximum(cam, 0)
-    # cam = cam - np.min(cam)
-    # cam = cam / np.max(cam)
-    # cam = cam / 30
-
-    # cam = np.uint8(255*cam)
-
-    return cam
-
+    return output_cam, unnormalized_cams, (smallest, biggest), max_cams, unnorm_maxcam, argmax_maxcam
 
 
 def make_folder(out):
@@ -142,14 +86,15 @@ def make_folder(out):
 def detect(save_img=False):
     
     top_net = Net()
-    top_net.load_state_dict(torch.load('focal_fcn_best_test_weights.pt'))
+    top_net.load_state_dict(torch.load('surfboard_fcn_best_test_weights.pt'))
 
     params = list(top_net.named_parameters())
-    # print(params[-2][1].shape)
+    # print(params)
+    # print(params[-1][1].shape)
     top_net_weights = params[-2][1].data.cpu().numpy()
 
 
-    imgsz = opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
+    imgsz = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
 
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
@@ -158,6 +103,20 @@ def detect(save_img=False):
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
 
     top_net.to(device)
+
+    if os.path.exists(out):
+        shutil.rmtree(out)  # delete output folder
+    os.makedirs(out)  # make new output folder
+
+    resized_input_out = 'resized_input_{}'.format(out)
+    if os.path.exists(resized_input_out):
+        shutil.rmtree(resized_input_out)  # delete output folder
+    os.makedirs(resized_input_out)  # make new output folder
+
+    features_out = 'yolov3_{}'.format(out)
+    if os.path.exists(features_out):
+        shutil.rmtree(features_out)  # delete output folder
+    os.makedirs(features_out)  # make new output folder
 
     # Initialize model
     model = Darknet(opt.cfg, imgsz)
@@ -178,6 +137,7 @@ def detect(save_img=False):
 
     # Eval mode
     model.to(device).eval()
+
     # Fuse Conv2d + BatchNorm2d layers
     # model.fuse()
 
@@ -214,7 +174,7 @@ def detect(save_img=False):
 
     # Get names and colors
     names = load_classes(opt.names)
-    names.append('aux')
+    # names.append('aux')
 
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
 
@@ -223,6 +183,8 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
 
+    smallest = np.inf
+    biggest = 0
     for path, img, im0s, vid_cap in dataset:
         fname = os.path.basename(path).split('.')[0]
 
@@ -236,70 +198,33 @@ def detect(save_img=False):
             img = img.unsqueeze(0)
 
         # Inference
-        index = 0
         t1 = torch_utils.time_synchronized()
-        # img.requires_grad = True
-        # data = model(img, augment=opt.augment)
-        # pred, image_path, features = data
-        # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
-        # predictions = top_net(features)
-        # labels = torch.sigmoid(predictions) > 0.75
-        # # labels = torch.ones().to(device)
-        # criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        # loss = criterion(predictions, labels.float())
-        # model.zero_grad()
-        # top_net.zero_grad()
-        # loss.backward()
-
-        # gradient =  torch.ge(img.grad, 0)
-        # gradient = (gradient.float() - 0.5) * 2
-        # temp_img = img - 0.0014*gradient
-        ## Perturb gradient ##
-
-        # data = model(temp_img, augment=opt.augment)
-        # pred, image_path, temp_features = data
-        # temp_features =  nn.AdaptiveAvgPool2d((1,1)) (temp_features)
-        # temp_predictions = top_net(temp_features)
-
         data = model(img, augment=opt.augment)
+
         pred, image_path, features = data
-        features =  nn.AdaptiveAvgPool2d((1,1)) (features)
-        predictions = top_net(features)
 
-        class_idx = list(range(0,80))
-        size_upsample = im0s.shape[0:2]
-
-        cam = gradCAM(model, top_net, img, index, device, size_upsample)
-        # temp_cam = gradCAMplusplus(model, top_net, temp_img, index, device, size_upsample)
-        # cam = gradCAM(model, top_net, img, 0, device, size_upsample)
-
+        features1 = top_net.conv1(features)
         
-        # cam, unnormalized_cams = returnCAM(features.detach().cpu().numpy().squeeze(), top_net_weights, class_idx, size_upsample)
+        class_idx = list(range(0,1))
+        size_upsample = im0s.shape[0:2]
+        cam, unnormalized_cams, (small, big), max_cam, unnorm_maxcam, argmax_maxcam = returnCAM(features1.cpu().numpy().squeeze(), top_net_weights, class_idx, size_upsample)
+        smallest = min(smallest, min(small))
+        biggest = max(biggest, max(big))
+
+        # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+        predictions = top_net(features)
+        fname = os.path.basename(path).split('.')[0]
+        np.save(os.path.join(features_out, '{}.npy'.format(fname)), features.cpu().numpy())
 
         result = []
         predictions = torch.sigmoid(predictions).flatten()
         for i in range(80):
-            if predictions[i] > 0.25:
+            if predictions[i] > 0.7:
                 result.append([names[i], predictions[i].item()])
+
         print(result)
 
-        # result = []
-        # temp_predictions = torch.sigmoid(temp_predictions).flatten()
-        # for i in range(80):
-        #     if temp_predictions[i] > 0.25:
-        #         result.append([names[i], temp_predictions[i].item()])
-        # print(result)
-
-        # predictions = torch.sigmoid(predictions).flatten()
-        # temp_predictions = torch.sigmoid(temp_predictions).flatten()
-        # result = []
-        # for i in range(80):
-        #     if predictions[i] > 0.75:
-        #         result.append([names[i], abs(predictions[i].item() - temp_predictions[i].item())])
-        # print(result)
-
         t2 = torch_utils.time_synchronized()
-
         # to float
         if half:
             pred = pred.float()
@@ -314,7 +239,10 @@ def detect(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections for image i
-            p, s, im0 = path, '', im0s
+            if webcam:  # batch_size >= 1
+                p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
+            else:
+                p, s, im0 = path, '', im0s
 
             save_path = str(Path(out) / Path(p).name)
             s += '%gx%g ' % img.shape[2:]  # print string
@@ -324,7 +252,7 @@ def detect(save_img=False):
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
                 # Print results
-                for c in det[:, -1].detach().unique():
+                for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
@@ -343,48 +271,43 @@ def detect(save_img=False):
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
+            # Stream results
+            if view_img:
+                cv2.imshow(p, im0)
+                if cv2.waitKey(1) == ord('q'):  # q to quit
+                    raise StopIteration
 
             # Save results (image with detections)
             if save_img:
+                if dataset.mode == 'images':
+                    w,h = size_upsample
+                    heatmap = cv2.applyColorMap(max_cam, cv2.COLORMAP_JET)
 
-                
-                # norm_factor = max([np.max(cam), np.max(temp_cam)])
+                    new_img = heatmap*0.3 + im0*0.5
 
-                cam -= np.min(cam)
-                norm_factor = np.max(cam)
-                heatmap = cv2.applyColorMap(np.uint8(255*cam/norm_factor), cv2.COLORMAP_JET)
+                    new_folder = os.path.join(out, 'max_cam')
+                    make_folder(new_folder)
+                    cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                    np.savetxt(os.path.join(new_folder, os.path.basename(save_path).replace('png', 'txt').replace('jpg', 'txt')), unnorm_maxcam)
+                    np.savetxt(os.path.join(new_folder, 'argmax_' + os.path.basename(save_path).replace('png', 'txt').replace('jpg', 'txt')), argmax_maxcam)
 
-                new_img = heatmap*0.3 + im0*0.5
-                new_folder = os.path.join(out, names[index])
-                make_folder(new_folder)
-                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                else:
+                    if vid_path != save_path:  # new video
+                        vid_path = save_path
+                        if isinstance(vid_writer, cv2.VideoWriter):
+                            vid_writer.release()  # release previous video writer
 
-                # heatmap = cv2.applyColorMap(np.uint8(255*temp_cam/norm_factor), cv2.COLORMAP_JET)
+                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
+                    vid_writer.write(im0)
+    if save_txt or save_img:
+        print('Results saved to %s' % os.getcwd() + os.sep + out)
+        if platform == 'darwin':  # MacOS
+            os.system('open ' + save_path)
 
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_odin', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
-                # subtract_cam = np.abs(cam - temp_cam)
-                # print(np.max(subtract_cam))
-                # subtract_cam /= np.max(subtract_cam)
-                # # subtract_cam /= 20
-                # subtract_cam = np.uint8(255*subtract_cam)
-
-                # heatmap = cv2.applyColorMap(subtract_cam, cv2.COLORMAP_JET)
-
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_subtract', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
-                    # unnormalized_heatmap = unnormalized_cams[i]
-
-                    # print(unnormalized_heatmap.shape)
-                    # np.savetxt(os.path.join(new_folder, os.path.basename(save_path).replace('png', 'txt').replace('jpg', 'txt')), unnormalized_heatmap)
-
-
+    print(smallest, biggest)
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
@@ -410,7 +333,7 @@ if __name__ == '__main__':
     opt.cfg = check_file(opt.cfg)  # check file
     opt.names = check_file(opt.names)  # check file
     print(opt)
-    detect()
-    # with torch.no_grad():
-        
+
+    with torch.no_grad():
+        detect()
 

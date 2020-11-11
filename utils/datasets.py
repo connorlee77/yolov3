@@ -285,13 +285,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             self.img_files = [x.replace('/', os.sep) for x in f if os.path.splitext(x)[-1].lower() in img_formats]
 
             # Prune empty images
-            pruned_img_files = []
-            for i, x in enumerate(self.img_files):
-                label_file = x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
-                if os.path.isfile(label_file):
-                    pruned_img_files.append(x)
+            # pruned_img_files = []
+            # for i, x in enumerate(self.img_files):
+            #     label_file = x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
+            #     if os.path.isfile(label_file):
+            #         pruned_img_files.append(x)
 
-            self.img_files = pruned_img_files
+            # self.img_files = pruned_img_files
 
         except:
             raise Exception('Error loading data from %s. See %s' % (path, help_url))
@@ -500,12 +500,12 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         if self.augment:
             # Augment imagespace
-            if not self.mosaic:
-                img, labels = random_affine(img, labels,
-                                            degrees=hyp['degrees'],
-                                            translate=hyp['translate'],
-                                            scale=hyp['scale'],
-                                            shear=hyp['shear'])
+            # if not self.mosaic:
+            #     img, labels = random_affine(img, labels,
+            #                                 degrees=hyp['degrees'],
+            #                                 translate=hyp['translate'],
+            #                                 scale=hyp['scale'],
+            #                                 shear=hyp['shear'])
 
             # Augment colorspace
             augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
@@ -532,7 +532,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     labels[:, 1] = 1 - labels[:, 1]
 
             # random up-down flip
-            ud_flip = False
+            ud_flip = True
             if ud_flip and random.random() < 0.5:
                 img = np.flipud(img)
                 if nL:

@@ -40,6 +40,9 @@ class MultiLabelDataset(Dataset):
 
 		label = np.zeros(80)
 		label[list(present_classes)] = 1
+		label = torch.zeros(1).float()
+		if 0 in present_classes:
+			label += 1
 
 		return features.flatten(), label
 
@@ -49,7 +52,7 @@ class MultiLabelDataset(Dataset):
 class Net(nn.Module):
 	def __init__(self):
 	  super(Net, self).__init__()
-	  self.fc1 = nn.Linear(1024, 80)
+	  self.fc1 = nn.Linear(1024, 1, bias=True)
 
 	# x represents our data
 	def forward(self, x):
@@ -71,8 +74,10 @@ def eval(loader, train=True):
 
 		preds = outputs > threshold
 		matches = labels.int() == preds.int()
-		accuracy = torch.mean(matches.sum(dim=1).float() / 80)
-
+		accuracy = torch.mean(matches.float())
+		x = preds.cpu().int().numpy()
+		y = labels.cpu().int().numpy()
+		print(x, y)
 		total_loss += loss.item()
 		total_acc += accuracy.item()
 
@@ -90,8 +95,8 @@ if __name__ == '__main__':
 	# for i in tqdm.tqdm(range(dataset.__len__())):
 	# 	dataset.__getitem__(i)
 
-	batch_size = 512
-	num_workers = 8
+	batch_size = 1
+	num_workers = 0
 	device = torch.device('cuda:0')
 	threshold = 0.8
 
@@ -101,6 +106,6 @@ if __name__ == '__main__':
 	criterion = nn.BCEWithLogitsLoss()
 	
 	testset = MultiLabelDataset(path='yolov3_coco_val2017')
-	testloader = utils.DataLoader(testset, batch_size=512, shuffle=False, num_workers=1, pin_memory=True)
+	testloader = utils.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
 	test()
 

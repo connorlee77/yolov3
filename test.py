@@ -103,12 +103,12 @@ def test(cfg,
             t = torch_utils.time_synchronized()
             inf_out, train_out, features = model(imgs, augment=augment)  # inference and training outputs
 
-            # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+            features =  nn.AdaptiveAvgPool2d((1,1)) (features)
             BATCH_N = features.shape[0]
             for i in range(BATCH_N):
                 path = paths[i]
                 fname = os.path.basename(path).split('.')[0]
-                # print(features[i].cpu().numpy().shape)
+                print(features[i].cpu().numpy().shape)
                 npy_path = os.path.join(out, '{}.npy'.format(fname))
                 np.save(npy_path, features[i].cpu().numpy())
 
@@ -199,7 +199,7 @@ def test(cfg,
             #     # print(map1)
 
         # Plot images
-        if batch_i == 186:
+        if batch_i == 1:
             f = 'test_batch%g_gt.jpg' % batch_i  # filename
             plot_images(imgs, targets, paths=paths, names=names, fname=f)  # ground truth
             f = 'test_batch%g_pred.jpg' % batch_i

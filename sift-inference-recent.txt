@@ -1,0 +1,10 @@
+python siamese-inference.py --device=0 --exp_name=Xcv2sift6Amulti --data_dir=CONNECTICUT_TILED_150/inference_test/ --store_data_dir=SIFT_CT
+
+python siamese-inference.py --device=0 --exp_name=MTcv2sift3x1 --data_dir=MONTANA_TILED_1200/inference_test/ --store_data_dir=SIFT_MT
+
+python siamese-inference.py --device=1 --exp_name=Xcv2siftCTMTmultix1 --data_dir=MONTANA_TILED_1200/inference_test/ --store_data_dir=SIFT_MT
+python siamese-inference.py --device=0 --exp_name=Xcv2siftCTMTmultix1 --data_dir=CONNECTICUT_TILED_150/inference_test/ --store_data_dir=SIFT_CT
+
+python siamese-inference.py --device=1 --exp_name=MTcv2sifty1 --data_dir=MONTANA_TILED_1200/inference_test/ --store_data_dir=SIFT_MT
+
+python siamese-inference.py --device=0 --exp_name=CTcv2sifty1 --data_dir=CONNECTICUT_TILED_150/inference_test/ --store_data_dir=SIFT_CT
