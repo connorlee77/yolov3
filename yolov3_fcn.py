@@ -185,9 +185,11 @@ def train():
 		for parameter in module.parameters():
 			parameter.requires_grad = False
 
-	optimizer = optim.Adam(model.parameters(), lr=1e-3)
+	# optimizer = optim.Adam(model.parameters(), lr=1e-3)
+	optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9, nesterov=True)
 	scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.995, last_epoch=-1)
 	criterion = FocalLoss(weights=None, gamma=2)
+	# criterion = nn.BCEWithLogitsLoss()
 	
 	train_path = 'coco/train2017.txt'
 	test_path = 'coco/val2017.txt'
@@ -229,7 +231,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--batch_size', type=int, default=32, help='size of each image batch')
 	parser.add_argument('--num_workers', type=int, default=8)
-	parser.add_argument('--epochs', type=int, default=1000)
+	parser.add_argument('--epochs', type=int, default=100)
 	parser.add_argument('--device', default='0', help='device id (i.e. 0 or 0,1) or cpu')
 	parser.add_argument('--exp_name', type=str, default='exp001', help='*.cfg path')
 
