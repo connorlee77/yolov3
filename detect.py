@@ -6,6 +6,10 @@ from utils.utils import *
 import cv2 
 
 import kornia.feature
+from bbox import find_paws, slice_to_bbox, remove_overlaps
+import matplotlib.patches as patches
+
+
 
 class Net(nn.Module):
     def __init__(self, base_model):
@@ -208,12 +212,12 @@ def detect(save_img=False):
         labels = torch.sigmoid(x) >= 0
         # labels = torch.ones().to(device)
         criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        loss = criterion(x[0, index], labels[0, index].float())
+        loss = criterion(x[0, :], labels[0, :].float())
         model.zero_grad()
         loss.backward()
 
         # gradient = img.grad
-        gradient =  torch.ge(img.grad, 0)
+        gradient = torch.ge(img.grad, 0)
         gradient = (gradient.float() - 0.5) * 2
         temp_img = img - 0.0014*gradient
         ## Perturb gradient ##
@@ -232,10 +236,10 @@ def detect(save_img=False):
         result = []
         predictions = torch.sigmoid(x).flatten()
         for i in range(80):
-            if predictions[i] > 0.0:
+            if predictions[i] > 0.5:
                 result.append([names[i], predictions[i].item()])
-        # print(result)
-        print(predictions[index])
+        print(result)
+        # print(predictions[index])
 
         result = []
         temp_predictions = torch.sigmoid(temp_predictions).flatten()
@@ -243,8 +247,8 @@ def detect(save_img=False):
             if temp_predictions[i] > 0.0:
                 result.append([names[i], temp_predictions[i].item()])
         # print(result)
-        print(temp_predictions[index])
-        print(predictions[index] / temp_predictions[index])
+        # print(temp_predictions[index])
+        # print(predictions[index] / temp_predictions[index])
         # predictions = torch.sigmoid(predictions).flatten()
         # temp_predictions = torch.sigmoid(temp_predictions).flatten()
         # result = []
@@ -297,88 +301,70 @@ def detect(save_img=False):
 
             # Save results (image with detections)
             if save_img:
+
+                # denom_cam = cam.clone()
+                # denom_cam[denom_cam < 1e-3] = 1e10
+                # percent_increase = (temp_cam - cam) / denom_cam
+
+                # fig = plt.figure()
+                # ax = fig.add_subplot(111)
+                # plt.imshow(percent_increase.squeeze().cpu().detach().numpy())
+                # plt.colorbar()
+                # plt.show()
                 
-                print(torch.min(cam), torch.max(cam))
-                print(torch.min(temp_cam), torch.max(temp_cam))
-
-                # temp_cam = torch.clamp(temp_cam, 0.001, 1)
-                cam = torch.clamp(cam, 0.001, 1)
-                # div_cam = cam / (temp_cam + 1e-8)
                 
-                div_cam = torch.abs(cam - temp_cam) / (cam + 1e-8)                
+                # percent_increase = 255*(percent_increase.squeeze().cpu().detach().numpy() > 1e-2)
+                # data_slices = find_paws(percent_increase, smooth_radius = 20, threshold = 22)
+                # bboxes = slice_to_bbox(data_slices)
+                # for bbox in bboxes:
+                #     xwidth = bbox.x2 - bbox.x1
+                #     ywidth = bbox.y2 - bbox.y1
+                #     p = patches.Rectangle((bbox.x1, bbox.y1), xwidth, ywidth,
+                #                           fc = 'none', ec = 'red')
+                #     ax.add_patch(p)
 
-                plt.figure()
-                plt.imshow(cam.squeeze().cpu().detach().numpy())
-                plt.colorbar()
-                plt.show()
-
-                plt.figure()
-                plt.imshow(temp_cam.squeeze().cpu().detach().numpy())
-                plt.colorbar()
-                plt.show()
-
-
-                # print(torch.max(div_cam))
-                # plt.figure()
-                # plt.imshow(div_cam.squeeze().cpu().detach().numpy())
-                # plt.show()
-                # val = kornia.feature.nms2d(div_cam, kernel_size=(3,3))
-                # print(torch.max(val), torch.min(val))
-                # plt.imshow(val.squeeze().cpu().detach().numpy())
-                # plt.show()
-                # exit(0)
-
-                div_cam = div_cam.squeeze().cpu().detach().numpy()
-                # plt.hist(div_cam.ravel())
                 # plt.show()
 
-                plt.imshow(div_cam)
-                plt.colorbar()
-                plt.show()
 
-                # # div_cam = cam / (temp_cam + 1e-8)
-                # div_cam = np.uint8(255*div_cam)
-                # print(div_cam)
-                # heatmap = cv2.applyColorMap(div_cam, cv2.COLORMAP_JET)
+                diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
+                # plt.imshow(diff_cam)
+                # plt.colorbar()
+                # plt.show()
+                print(np.min(diff_cam), np.max(diff_cam))
+                # diff_cam -= np.min(diff_cam)
+                # diff_cam /= np.max(diff_cam)
+                diff_cam /= 0.01
 
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out, names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                heatmap = cv2.applyColorMap(np.uint8(255*diff_cam), cv2.COLORMAP_JET)
 
-                # norm_factor = np.max(cam)
-                # cam = np.uint8(255*cam/norm_factor)
-                # heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+                new_img = heatmap*0.3 + im0*0.5
+                new_folder = os.path.join(out + '_diff', names[index])
+                make_folder(new_folder)
+                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
 
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out, names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
 
-                # heatmap = cv2.applyColorMap(np.uint8(255*temp_cam/norm_factor), cv2.COLORMAP_JET)
+                cam = cam.squeeze().cpu().detach().numpy()
+                cam -= np.min(cam)
+                cam /= np.max(cam)
 
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_odin', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
 
-                # subtract_cam = np.abs(cam - temp_cam)
-                # print(np.max(subtract_cam))
-                # subtract_cam /= np.max(subtract_cam)
-                # # subtract_cam /= 20
-                # subtract_cam = np.uint8(255*subtract_cam)
+                new_img = heatmap*0.3 + im0*0.5
+                new_folder = os.path.join(out + '_cam', names[index])
+                make_folder(new_folder)
+                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
 
-                # heatmap = cv2.applyColorMap(subtract_cam, cv2.COLORMAP_JET)
+                temp_cam = temp_cam.squeeze().cpu().detach().numpy()
+                temp_cam -= np.min(temp_cam)
+                temp_cam /= np.max(temp_cam)
 
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_subtract', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                heatmap = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
 
-                    # unnormalized_heatmap = unnormalized_cams[i]
+                new_img = heatmap*0.3 + im0*0.5
+                new_folder = os.path.join(out + '_temp_cam', names[index])
+                make_folder(new_folder)
+                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
 
-                    # print(unnormalized_heatmap.shape)
-                    # np.savetxt(os.path.join(new_folder, os.path.basename(save_path).replace('png', 'txt').replace('jpg', 'txt')), unnormalized_heatmap)
 
 
     print('Done. (%.3fs)' % (time.time() - t0))
