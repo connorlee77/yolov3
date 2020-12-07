@@ -245,10 +245,10 @@ def detect(save_img=False):
         img.requires_grad = True
         data = model(img, augment=opt.augment)
         pred, image_path, features = data
-        labels = pred[0,:,index] > 0.75
+        labels = pred[0,:,index + 4] > 0.75
         # labels = torch.ones().to(device)
         criterion = nn.BCELoss(reduction='mean')
-        loss = criterion(pred[0,:,index], labels.float())
+        loss = criterion(pred[0,:,index + 4], labels.float())
         model.zero_grad()
         loss.backward()
 

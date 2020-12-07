@@ -9,6 +9,7 @@ from utils.utils import *
 
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
 from os import devnull
+import os
 import matplotlib.pyplot as plt 
 
 @contextmanager
@@ -67,13 +68,16 @@ def test(cfg,
     data = parse_data_cfg(data)
     nc = 1 if single_cls else int(data['classes'])  # number of classes
     path = data['valid']  # path to test images
+    #print(path)
     names = load_classes(data['names'])  # class names
     iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     iouv = iouv[0].view(1)  # comment for mAP@0.5:0.95
     niou = iouv.numel()
+    dataset = None
 
     # Dataloader
     if dataloader is None:
+        #print(os.path.exists(path))
         dataset = LoadImagesAndLabels(path, imgsz, batch_size, rect=True, single_cls=opt.single_cls, pad=0.5)
         batch_size = min(batch_size, len(dataset))
         dataloader = DataLoader(dataset,
@@ -90,6 +94,9 @@ def test(cfg,
     p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
+    num_falses = []
+    num_trues = []
+    num_fn = []
     for batch_i, (imgs, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
 
         imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
@@ -108,7 +115,7 @@ def test(cfg,
             for i in range(BATCH_N):
                 path = paths[i]
                 fname = os.path.basename(path).split('.')[0]
-                print(features[i].cpu().numpy().shape)
+                #print(features[i].cpu().numpy().shape)
                 npy_path = os.path.join(out, '{}.npy'.format(fname))
                 np.save(npy_path, features[i].cpu().numpy())
 
@@ -124,7 +131,15 @@ def test(cfg,
             t1 += torch_utils.time_synchronized() - t
 
         # Statistics per image
+        '''for i in paths:
+            if i == 'data/bdd100k/images/100k/val/b371451e-7caf934b.jpg':
+                f = 'test_FN_gt.jpg'
+                plot_images(imgs, targets, paths=paths, names=names, fname=f)
+                f = 'test_FN_pred.jpg'
+                plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)
+                exit()'''
         for si, pred in enumerate(output):
+            pred_labeled = []
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class
@@ -158,12 +173,36 @@ def test(cfg,
 
             # Assign all predictions as incorrect
             correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+            fn = 0
             if nl:
                 detected = []  # target indices
                 tcls_tensor = labels[:, 0]
-
+                def box_area(box):
+                    return (box[2] - box[0]) * (box[3] - box[1])
                 # target boxes
                 tbox = xywh2xyxy(labels[:, 1:5]) * whwh
+                FNs = []
+                for k, j in enumerate(tbox):
+                    ious = []
+                    for i in pred:
+                        if i[4] < 0.3:
+                            continue
+                        boxB = i[:4]
+                        boxA = j
+                        xA = max(boxA[0], boxB[0])
+                        yA = max(boxA[1], boxB[1])
+                        xB = min(boxA[2], boxB[2])
+                        yB = min(boxA[3], boxB[3])
+                        interArea = max(0, xB - xA) * max(0, yB - yA)
+                        area1 = box_area(i[:4])
+                        area2 = box_area(j)
+                        ious.append((interArea / (area1 + area2 - interArea)).cpu().item())  # iou = inter / (area1 + area2 - inter)
+                    ious = np.array(ious)
+                    if np.count_nonzero(ious) == 0:
+                        fn += 1
+                        pred_labeled.append(j.cpu().numpy().tolist())
+                        pred_labeled[-1].append(labels[k, 0].item())
+                        pred_labeled[-1].append('FN')
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
@@ -174,6 +213,9 @@ def test(cfg,
                     if pi.shape[0]:
                         # Prediction to target ious
                         ious, i = box_iou(pred[pi, :4], tbox[ti]).max(1)  # best ious, indices
+                        test = box_iou(pred[pi, :4], tbox[ti])
+                        #print('targets: {}'.format(tbox[ti]))
+                        #print('all ious for class {} image {}: {}'.format(cls, paths, test))
 
                         # Append detections
                         for j in (ious > iouv[0]).nonzero():
@@ -183,12 +225,22 @@ def test(cfg,
                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
+                for i, p in enumerate(pred):
+                    pred_labeled.append(p[:4].cpu().numpy().tolist())
+                    pred_labeled[-1].append(p[5].item())
+                    if(correct[i].item()):
+                        pred_labeled[-1].append('TP')
+                    else:
+                        pred_labeled[-1].append('FP')
 
 
 
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
-            
+            num_falses.append(len(correct.cpu()) - np.count_nonzero(correct.cpu()))
+            num_trues.append(np.count_nonzero(correct.cpu()))
+            num_fn.append(fn)
+            np.save('/home/carson/Desktop/yolov3/yolov3/predlabeled/' + paths[si].split('.')[0].split('/')[-1], np.array(pred_labeled))
             # arr = [(correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)]
             # arr = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
             # if len(arr):
@@ -197,14 +249,29 @@ def test(cfg,
             #         p1, r1, ap1, f11 = p1[:, 0], r1[:, 0], ap1.mean(1), ap1[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
             #     mp1, mr1, map1, mf11 = p1.mean(), r1.mean(), ap1.mean(), f11.mean()
             #     # print(map1)
-
+        #print(output_to_target(output, width, height))
         # Plot images
         if batch_i == 1:
+            print('printing images')
             f = 'test_batch%g_gt.jpg' % batch_i  # filename
             plot_images(imgs, targets, paths=paths, names=names, fname=f)  # ground truth
             f = 'test_batch%g_pred.jpg' % batch_i
             plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)  # predictions
-
+    indices = np.argpartition(num_falses, -100)[-100:]
+    with open('images_of_interest_TF.txt', 'w') as f:
+        for i in indices:
+            f.write(str(dataloader.dataset.img_files[i]) + '\n')
+    indices = np.argpartition(num_trues, -100)[-100:]
+    with open('images_of_interest_TP.txt', 'w') as f: 
+        for i in indices:
+            f.write(str(dataloader.dataset.img_files[i]) + '\n')
+    indices = np.argpartition(num_fn, -100)[-100:]
+    with open('images_of_interest_FN.txt', 'w') as f:
+        for i in indices:
+            f.write(str(dataloader.dataset.img_files[i]) + '\n')
+    print(indices)
+    print(num_fn)
+    exit()
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats):
