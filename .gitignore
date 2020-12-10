@@ -7,6 +7,7 @@ mnist_data/
 esmir_commands
 fashionmnist_data/
 coco/
+bdd100k*
 
 *.jpg
 *.jpeg
@@ -28,6 +29,7 @@ coco/
 *.avi
 *.data
 *.json
+*.csv
 
 *.cfg
 !cfg/yolov3*.cfg

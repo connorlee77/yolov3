@@ -8,7 +8,7 @@ import cv2
 import kornia.feature
 from bbox import find_paws, slice_to_bbox, remove_overlaps
 import matplotlib.patches as patches
-
+from scipy.io import savemat
 
 
 class Net(nn.Module):
@@ -55,71 +55,13 @@ class Net(nn.Module):
         return sig_pred, x, x1
 
 
-
-def returnCAM(feature_conv, weight_softmax, class_idx, size_upsample):
-    # generate the class activation maps upsample to 256x256
-    nc, h, w = feature_conv.shape
-    output_cam = []
-    unnormalized_cams = []
-
-    for idx in class_idx:
-        cam = weight_softmax[idx].dot(feature_conv.reshape((nc, h*w)))
-        cam = cam.reshape(h, w)
-        cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
-        temp_cam = cam[:]
-        cam = np.maximum(cam, 0)
-        cam_img = cam / np.max(cam)
-        cam_img = np.uint8(255 * cam_img)
-        
-        output_cam.append(cam_img)
-        unnormalized_cams.append(temp_cam)
-    
-    return output_cam, unnormalized_cams
-
-# def gradCAM(base_model, top_net, img, index, device, size_upsample):
-#     # generate the class activation maps upsample to 256x256
-#     data = base_model(img, augment=opt.augment)
-#     pred, image_path, features = data
-#     features.retain_grad()
-
-#     features_pooled =  nn.AdaptiveAvgPool2d((1,1)) (features)
-#     scores = top_net(features_pooled)
-
-#     base_model.zero_grad()
-#     top_net.zero_grad()
-
-#     # one_hot = torch.zeros(scores.size()).to(device)
-#     # one_hot[0,index] = 1
-#     # one_hot_scores = torch.sum(one_hot*scores)
-#     scores[0,index].backward()
-
-#     alpha = nn.AdaptiveAvgPool2d((1,1)) (features.grad)
-#     cam = torch.zeros(features.shape[2:]).to(device)
-
-#     for i, w in enumerate(alpha.squeeze()):
-#         cam += w*features[0,i]
-
-
-#     cam = F.relu(cam).cpu().detach().numpy()
-#     cam = cv2.resize(cam, size_upsample[::-1], interpolation=cv2.INTER_CUBIC)
-    
-#     # cam = cam - np.min(cam)
-#     # cam = cam / np.max(cam)
-
-#     # cam = np.uint8(255*cam)
-
-#     return cam
-
-
 def gradCAM(base_model, top_net, img, index, device, size_upsample):
     # generate the class activation maps upsample to 256x256
     data = base_model(img)
     pred, x, features = data
     features.retain_grad()
     base_model.zero_grad()
-    # one_hot = torch.zeros(scores.size()).to(device)
-    # one_hot[0,index] = 1
-    # one_hot_scores = torch.sum(one_hot*scores)
+
     x[0,index].backward()
     alpha = nn.AdaptiveAvgPool2d((1,1)) (features.grad)
     
@@ -132,7 +74,6 @@ def gradCAM(base_model, top_net, img, index, device, size_upsample):
     
     # cam = cam - np.min(cam)
     # cam = cam / np.max(cam)
-
     # cam = np.uint8(255*cam)
 
     return cam
@@ -227,25 +168,25 @@ def detect(save_img=False):
         data = model(img)
         pred, x, features = data
 
-        class_idx = list(range(0,80))
+        # class_idx = list(range(0,80))
         size_upsample = im0s.shape[0:2]
 
         cam = gradCAM(model, None, img, index, device, size_upsample)
         temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
 
-        result = []
-        predictions = torch.sigmoid(x).flatten()
-        for i in range(80):
-            if predictions[i] > 0.5:
-                result.append([names[i], predictions[i].item()])
-        print(result)
-        # print(predictions[index])
+        # result = []
+        # predictions = torch.sigmoid(x).flatten()
+        # for i in range(80):
+        #     if predictions[i] > 0.5:
+        #         result.append([names[i], predictions[i].item()])
+        # print(result)
+        # # print(predictions[index])
 
-        result = []
-        temp_predictions = torch.sigmoid(temp_predictions).flatten()
-        for i in range(80):
-            if temp_predictions[i] > 0.0:
-                result.append([names[i], temp_predictions[i].item()])
+        # result = []
+        # temp_predictions = torch.sigmoid(temp_predictions).flatten()
+        # for i in range(80):
+        #     if temp_predictions[i] > 0.0:
+        #         result.append([names[i], temp_predictions[i].item()])
         # print(result)
         # print(temp_predictions[index])
         # print(predictions[index] / temp_predictions[index])
@@ -273,29 +214,29 @@ def detect(save_img=False):
 
             save_path = str(Path(out) / Path(p).name)
             s += '%gx%g ' % img.shape[2:]  # print string
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
-            if det is not None and len(det):
-                # Rescale boxes from imgsz to im0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+            # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
+            # if det is not None and len(det):
+            #     # Rescale boxes from imgsz to im0 size
+            #     det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
-                # Print results
-                for c in det[:, -1].detach().unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += '%g %ss, ' % (n, names[int(c)])  # add to string
+            #     # Print results
+            #     for c in det[:, -1].detach().unique():
+            #         n = (det[:, -1] == c).sum()  # detections per class
+            #         s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
-                # Write results
-                for *xyxy, conf, cls in reversed(det):
-                    if save_txt:  # Write to file
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        with open(save_path[:save_path.rfind('.')] + '.txt', 'a') as file:
-                            file.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
+            #     # Write results
+            #     for *xyxy, conf, cls in reversed(det):
+            #         if save_txt:  # Write to file
+            #             xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+            #             with open(save_path[:save_path.rfind('.')] + '.txt', 'a') as file:
+            #                 file.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
-                    if save_img or view_img:  # Add bbox to image
-                        label = '%s %.2f' % (names[int(cls)], conf)
-                        # print(xyxy)
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+            #         if save_img or view_img:  # Add bbox to image
+            #             label = '%s %.2f' % (names[int(cls)], conf)
+            #             # print(xyxy)
+            #             plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
 
-            # Print time (inference + NMS)
+            # # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
 
@@ -326,45 +267,64 @@ def detect(save_img=False):
                 # plt.show()
 
 
+                # diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
+                # # plt.imshow(diff_cam)
+                # # plt.colorbar()
+                # # plt.show()
+                # print(np.min(diff_cam), np.max(diff_cam))
+                # # diff_cam -= np.min(diff_cam)
+                # # diff_cam /= np.max(diff_cam)
+                # diff_cam /= 0.01
+
+                # heatmap = cv2.applyColorMap(np.uint8(255*diff_cam), cv2.COLORMAP_JET)
+
+                # new_img = heatmap*0.3 + im0*0.5
+                # new_folder = os.path.join(out + '_diff', names[index])
+                # make_folder(new_folder)
+                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+
+
+                # cam = cam.squeeze().cpu().detach().numpy()
+                # cam -= np.min(cam)
+                # cam /= np.max(cam)
+
+                # heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
+
+                # new_img = heatmap*0.3 + im0*0.5
+                # new_folder = os.path.join(out + '_cam', names[index])
+                # make_folder(new_folder)
+                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+
+                # temp_cam = temp_cam.squeeze().cpu().detach().numpy()
+                # temp_cam -= np.min(temp_cam)
+                # temp_cam /= np.max(temp_cam)
+
+                # heatmap = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
+
+                # new_img = heatmap*0.3 + im0*0.5
+                # new_folder = os.path.join(out + '_temp_cam', names[index])
+                # make_folder(new_folder)
+                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+
+
+
+                save_file = os.path.basename(save_path).split('.')[0] + '.mat'
+
                 diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
-                # plt.imshow(diff_cam)
-                # plt.colorbar()
-                # plt.show()
-                print(np.min(diff_cam), np.max(diff_cam))
-                # diff_cam -= np.min(diff_cam)
-                # diff_cam /= np.max(diff_cam)
-                diff_cam /= 0.01
-
-                heatmap = cv2.applyColorMap(np.uint8(255*diff_cam), cv2.COLORMAP_JET)
-
-                new_img = heatmap*0.3 + im0*0.5
                 new_folder = os.path.join(out + '_diff', names[index])
                 make_folder(new_folder)
-                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
 
 
                 cam = cam.squeeze().cpu().detach().numpy()
-                cam -= np.min(cam)
-                cam /= np.max(cam)
-
-                heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
-
-                new_img = heatmap*0.3 + im0*0.5
                 new_folder = os.path.join(out + '_cam', names[index])
                 make_folder(new_folder)
-                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
 
-                temp_cam = temp_cam.squeeze().cpu().detach().numpy()
-                temp_cam -= np.min(temp_cam)
-                temp_cam /= np.max(temp_cam)
-
-                heatmap = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
-
-                new_img = heatmap*0.3 + im0*0.5
-                new_folder = os.path.join(out + '_temp_cam', names[index])
-                make_folder(new_folder)
-                cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
+                # gradient_cam = temp_cam.squeeze().cpu().detach().numpy()
+                # new_folder = os.path.join(out + '_gradient_cam', names[index])
+                # make_folder(new_folder)
+                # savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient_cam})
 
 
     print('Done. (%.3fs)' % (time.time() - t0))

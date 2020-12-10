@@ -11,6 +11,11 @@ from contextlib import contextmanager,redirect_stderr,redirect_stdout
 from os import devnull
 import os
 import matplotlib.pyplot as plt 
+import matplotlib.image as mpimg
+import cv2
+from PIL import Image
+from PIL import ImageDraw
+import matplotlib.patches as patches
 
 @contextmanager
 def suppress_stdout_stderr():
@@ -70,7 +75,7 @@ def test(cfg,
     path = data['valid']  # path to test images
     #print(path)
     names = load_classes(data['names'])  # class names
-    iouv = torch.linspace(0.5, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
+    iouv = torch.linspace(0.3, 0.95, 10).to(device)  # iou vector for mAP@0.5:0.95
     iouv = iouv[0].view(1)  # comment for mAP@0.5:0.95
     niou = iouv.numel()
     dataset = None
@@ -103,21 +108,21 @@ def test(cfg,
         targets = targets.to(device)
         nb, _, height, width = imgs.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
-        
+
         # Disable gradients
         with torch.no_grad():
             # Run model
             t = torch_utils.time_synchronized()
             inf_out, train_out, features = model(imgs, augment=augment)  # inference and training outputs
 
-            features =  nn.AdaptiveAvgPool2d((1,1)) (features)
-            BATCH_N = features.shape[0]
-            for i in range(BATCH_N):
-                path = paths[i]
-                fname = os.path.basename(path).split('.')[0]
-                #print(features[i].cpu().numpy().shape)
-                npy_path = os.path.join(out, '{}.npy'.format(fname))
-                np.save(npy_path, features[i].cpu().numpy())
+            # features =  nn.AdaptiveAvgPool2d((1,1)) (features)
+            # BATCH_N = features.shape[0]
+            # for i in range(BATCH_N):
+            #     path = paths[i]
+            #     fname = os.path.basename(path).split('.')[0]
+            #     #print(features[i].cpu().numpy().shape)
+            #     npy_path = os.path.join(out, '{}.npy'.format(fname))
+            #     np.save(npy_path, features[i].cpu().numpy())
 
             t0 += torch_utils.time_synchronized() - t
 
@@ -126,18 +131,14 @@ def test(cfg,
                 loss += compute_loss(train_out, targets, model)[1][:3]  # GIoU, obj, cls
 
             # Run NMS
+            gt_targets = targets.clone()
+            targets[:, 2:] *= whwh  # to pixels
             t = torch_utils.time_synchronized()
             output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres, multi_label=multi_label)
             t1 += torch_utils.time_synchronized() - t
 
         # Statistics per image
-        '''for i in paths:
-            if i == 'data/bdd100k/images/100k/val/b371451e-7caf934b.jpg':
-                f = 'test_FN_gt.jpg'
-                plot_images(imgs, targets, paths=paths, names=names, fname=f)
-                f = 'test_FN_pred.jpg'
-                plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)
-                exit()'''
+
         for si, pred in enumerate(output):
             pred_labeled = []
             labels = targets[targets[:, 0] == si, 1:]
@@ -150,12 +151,12 @@ def test(cfg,
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
                 continue
 
+            predn = pred.clone()
+            scale_coords(imgs[si].shape[1:], predn[:, :4], shapes[si][0], shapes[si][1])  # native-space pred
+
             # Append to text file
             # with open('test.txt', 'a') as file:
             #    [file.write('%11.5g' * 7 % tuple(x) + '\n') for x in pred]
-
-            # Clip boxes to image bounds
-            clip_coords(pred, (height, width))
 
             # Append to pycocotools JSON dictionary
             if save_json:
@@ -173,74 +174,88 @@ def test(cfg,
 
             # Assign all predictions as incorrect
             correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+            negatives = torch.zeros(labels.shape[0], niou, dtype=torch.bool, device=device)
             fn = 0
             if nl:
-                detected = []  # target indices
+                detected = set()  # target indices
+                predicted = set()
                 tcls_tensor = labels[:, 0]
-                def box_area(box):
-                    return (box[2] - box[0]) * (box[3] - box[1])
+
                 # target boxes
-                tbox = xywh2xyxy(labels[:, 1:5]) * whwh
-                FNs = []
-                for k, j in enumerate(tbox):
-                    ious = []
-                    for i in pred:
-                        if i[4] < 0.3:
-                            continue
-                        boxB = i[:4]
-                        boxA = j
-                        xA = max(boxA[0], boxB[0])
-                        yA = max(boxA[1], boxB[1])
-                        xB = min(boxA[2], boxB[2])
-                        yB = min(boxA[3], boxB[3])
-                        interArea = max(0, xB - xA) * max(0, yB - yA)
-                        area1 = box_area(i[:4])
-                        area2 = box_area(j)
-                        ious.append((interArea / (area1 + area2 - interArea)).cpu().item())  # iou = inter / (area1 + area2 - inter)
-                    ious = np.array(ious)
-                    if np.count_nonzero(ious) == 0:
-                        fn += 1
-                        pred_labeled.append(j.cpu().numpy().tolist())
-                        pred_labeled[-1].append(labels[k, 0].item())
-                        pred_labeled[-1].append('FN')
+                tbox = xywh2xyxy(labels[:, 1:5])
+                scale_coords(imgs[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
                     ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
-                    pi = (cls == pred[:, 5]).nonzero().view(-1)  # prediction indices
+                    pi = (cls == predn[:, 5]).nonzero().view(-1)  # prediction indices
 
                     # Search for detections
                     if pi.shape[0]:
                         # Prediction to target ious
-                        ious, i = box_iou(pred[pi, :4], tbox[ti]).max(1)  # best ious, indices
-                        test = box_iou(pred[pi, :4], tbox[ti])
-                        #print('targets: {}'.format(tbox[ti]))
-                        #print('all ious for class {} image {}: {}'.format(cls, paths, test))
+                        bbox_ious = box_iou(predn[pi, :4], tbox[ti])
+                        ious, i = bbox_ious.max(1)  # best ious, indices - search for best output match per prediction
+                        neg_ious, neg_i = bbox_ious.max(0) # search for best predicion per output match
 
                         # Append detections
                         for j in (ious > iouv[0]).nonzero():
-                            d = ti[i[j]]  # detected target
+                            d = ti[i[j]].item()  # detected target
                             if d not in detected:
-                                detected.append(d)
+                                detected.add(d)
                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
-                for i, p in enumerate(pred):
-                    pred_labeled.append(p[:4].cpu().numpy().tolist())
-                    pred_labeled[-1].append(p[5].item())
-                    if(correct[i].item()):
-                        pred_labeled[-1].append('TP')
+
+                        for j in (neg_ious < iouv[0]).nonzero():
+                            p = pi[neg_i[j]]
+                            if p not in predicted:
+                                predicted.add(p)
+                                negatives[ti[j]] = neg_ious[j] < iouv
+
+                # True/False positives
+                for i, p in enumerate(predn):
+                    pred_labeled.append(p.cpu().numpy().tolist())
+                    if correct[i].item():
+                        pred_labeled[-1].append(1) # 1 for TP
                     else:
-                        pred_labeled[-1].append('FP')
+                        pred_labeled[-1].append(0) # 0 for FP
 
-
-
+                # False negatives
+                for i, p in enumerate(tbox):
+                    if negatives[i].item():
+                        pred_labeled.append([*p.cpu().numpy().tolist(), -1, labels[i, 0].item(), -1])
+                        
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
             num_falses.append(len(correct.cpu()) - np.count_nonzero(correct.cpu()))
             num_trues.append(np.count_nonzero(correct.cpu()))
             num_fn.append(fn)
             np.save('/home/carson/Desktop/yolov3/yolov3/predlabeled/' + paths[si].split('.')[0].split('/')[-1], np.array(pred_labeled))
+
+
+            # testt = Image.open(paths[si])
+            # draw = ImageDraw.Draw(testt)
+
+            # tbox = xywh2xyxy(labels[:, 1:5])
+            # scale_coords(imgs[si].shape[1:], tbox, shapes[si][0], shapes[si][1])
+            # for k, j in enumerate(tbox):
+            #     x1 = j[0]
+            #     y1 = j[1]
+            #     x2 = j[2]
+            #     y2 = j[3]
+            #     draw.rectangle(((x1, y1), (x2, y2)))
+            #     draw.text((x1, y1), names[int(labels[k, 0].item())])
+            # testt.save('/home/carson/Desktop/yolov3/yolov3/ground_truths/' + paths[si].split('.')[0].split('/')[-1] + '.png', "PNG")
+            
+                
+
+
+
+            
+
+        
+        #f = '/home/carson/Desktop/yolov3/yolov3/ground_truths/' + paths[si].split('.')[0].split('/')[-1] + 'gt.jpg'
+        #plot_images(imgs, targets, paths=paths, names=names, fname=f)
             # arr = [(correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)]
             # arr = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
             # if len(arr):
@@ -251,27 +266,32 @@ def test(cfg,
             #     # print(map1)
         #print(output_to_target(output, width, height))
         # Plot images
-        if batch_i == 1:
+        '''if batch_i == 1:
             print('printing images')
             f = 'test_batch%g_gt.jpg' % batch_i  # filename
             plot_images(imgs, targets, paths=paths, names=names, fname=f)  # ground truth
             f = 'test_batch%g_pred.jpg' % batch_i
-            plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)  # predictions
-    indices = np.argpartition(num_falses, -100)[-100:]
-    with open('images_of_interest_TF.txt', 'w') as f:
-        for i in indices:
-            f.write(str(dataloader.dataset.img_files[i]) + '\n')
-    indices = np.argpartition(num_trues, -100)[-100:]
-    with open('images_of_interest_TP.txt', 'w') as f: 
-        for i in indices:
-            f.write(str(dataloader.dataset.img_files[i]) + '\n')
-    indices = np.argpartition(num_fn, -100)[-100:]
-    with open('images_of_interest_FN.txt', 'w') as f:
-        for i in indices:
-            f.write(str(dataloader.dataset.img_files[i]) + '\n')
-    print(indices)
-    print(num_fn)
-    exit()
+            plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)  # predictions'''
+
+    # indices = np.argpartition(num_falses, -100)[-100:]
+    # with open('images_of_interest_TF_thresh.txt', 'w') as f:
+    #     for i in indices:
+    #         f.write(str(dataloader.dataset.img_files[i]) + '\n')
+    # indices = np.argpartition(num_trues, -100)[-100:]
+    # with open('images_of_interest_TP_thresh.txt', 'w') as f: 
+    #     for i in indices:
+    #         f.write(str(dataloader.dataset.img_files[i]) + '\n')
+    # indices = np.argpartition(num_fn, -100)[-100:]
+    # with open('images_of_interest_FN_thresh.txt', 'w') as f:
+    #     for i in indices:
+    #         f.write(str(dataloader.dataset.img_files[i]) + '\n')
+
+    # print(indices)
+    # print(num_fn)
+    exit(0)
+
+
+
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats):
