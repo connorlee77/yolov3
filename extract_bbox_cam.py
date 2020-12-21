@@ -30,6 +30,8 @@ column_names = ['image_id', 'x1', 'y1', 'x2', 'y2', 'confidence', 'class', 'type
 for c in classes:
 	column_names.append(c + '_cam_max')
 	column_names.append(c + '_diff_max')
+	column_names.append(c + '_cam_mean')
+	column_names.append(c + '_diff_mean')
 
 for it, obj_inst in tqdm.tqdm(enumerate(pred_files), total=len(pred_files)):
 
@@ -77,12 +79,16 @@ for it, obj_inst in tqdm.tqdm(enumerate(pred_files), total=len(pred_files)):
 
 			cam_max = np.max(cam_bbox)
 			diff_max = np.max(diff_bbox)
-
 			row.append(cam_max)
 			row.append(diff_max)
+
+			cam_mean = np.mean(cam_bbox)
+			diff_mean = np.mean(diff_bbox)
+			row.append(cam_mean)
+			row.append(diff_mean)
 
 		data.append(row)
 
 df = pd.DataFrame(data, columns=column_names, dtype=float)
-df.to_csv('bdd100k_val_cams.csv')
+df.to_csv('bdd100k_val_cams_new.csv')
 print(df)

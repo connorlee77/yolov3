@@ -288,7 +288,6 @@ def test(cfg,
 
     # print(indices)
     # print(num_fn)
-    exit(0)
 
 
 
