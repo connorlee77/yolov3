@@ -9,7 +9,7 @@ import kornia.feature
 from bbox import find_paws, slice_to_bbox, remove_overlaps
 import matplotlib.patches as patches
 from scipy.io import savemat
-
+from scipy.ndimage import gaussian_filter
 
 class Net(nn.Module):
     def __init__(self, base_model):
@@ -135,7 +135,7 @@ def detect(save_img=False):
     for path, img, im0s, vid_cap in dataset:
         fname = os.path.basename(path).split('.')[0]
 
-        cv2.imwrite('resized_input_{}/{}.png'.format(out, fname), img.transpose(1, 2, 0))
+        # cv2.imwrite('resized_input_{}/{}.png'.format(out, fname), img.transpose(1, 2, 0))
 
         img = torch.from_numpy(img).to(device)
 
@@ -150,14 +150,21 @@ def detect(save_img=False):
         img.requires_grad = True
         data = model(img)
         pred, x, features = data
+        # labels = x[0,index] >= 0
         labels = torch.sigmoid(x) >= 0
         # labels = torch.ones().to(device)
         criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        loss = criterion(x[0, :], labels[0, :].float())
+        loss = criterion(x[0,:], labels[0,:].float())
+        print(x.shape)
+        # loss = criterion(x[0,index], labels.float())
         model.zero_grad()
         loss.backward()
 
         # gradient = img.grad
+        a = torch.norm(img.grad, dim=1, keepdim=True)
+        # plt.imshow(a)
+        # plt.show()
+        # exit(0)
         gradient = torch.ge(img.grad, 0)
         gradient = (gradient.float() - 0.5) * 2
         temp_img = img - 0.0014*gradient
@@ -315,11 +322,24 @@ def detect(save_img=False):
                 make_folder(new_folder)
                 savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
 
+                # cam[cam < 1e-5] = 10000000000
+                # div_cam = torch.div(temp_cam, cam)                
+                # div_cam = div_cam.squeeze().cpu().detach().numpy()
+                # new_folder = os.path.join(out + '_ratio', names[index])
+                # make_folder(new_folder)
+                # savemat(os.path.join(new_folder, save_file), mdict={'cam': div_cam})
+
 
                 cam = cam.squeeze().cpu().detach().numpy()
                 new_folder = os.path.join(out + '_cam', names[index])
                 make_folder(new_folder)
                 savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
+
+                gradient = a
+                gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
+                new_folder = os.path.join(out + '_gradient', names[index])
+                make_folder(new_folder)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
 
                 # gradient_cam = temp_cam.squeeze().cpu().detach().numpy()
                 # new_folder = os.path.join(out + '_gradient_cam', names[index])

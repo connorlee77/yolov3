@@ -108,7 +108,6 @@ def test(cfg,
         targets = targets.to(device)
         nb, _, height, width = imgs.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
-
         # Disable gradients
         with torch.no_grad():
             # Run model
@@ -184,7 +183,6 @@ def test(cfg,
                 # target boxes
                 tbox = xywh2xyxy(labels[:, 1:5])
                 scale_coords(imgs[si].shape[1:], tbox, shapes[si][0], shapes[si][1])  # native-space labels
-
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
                     ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
@@ -230,13 +228,14 @@ def test(cfg,
             num_falses.append(len(correct.cpu()) - np.count_nonzero(correct.cpu()))
             num_trues.append(np.count_nonzero(correct.cpu()))
             num_fn.append(fn)
-            np.save('/home/carson/Desktop/yolov3/yolov3/predlabeled/' + paths[si].split('.')[0].split('/')[-1], np.array(pred_labeled))
+            np.save('kitti_{}predlabeled/'.format(opt.attenuation) + paths[si].split('.')[0].split('/')[-1], np.array(pred_labeled))
 
 
             # testt = Image.open(paths[si])
             # draw = ImageDraw.Draw(testt)
-
+            
             # tbox = xywh2xyxy(labels[:, 1:5])
+
             # scale_coords(imgs[si].shape[1:], tbox, shapes[si][0], shapes[si][1])
             # for k, j in enumerate(tbox):
             #     x1 = j[0]
@@ -245,7 +244,8 @@ def test(cfg,
             #     y2 = j[3]
             #     draw.rectangle(((x1, y1), (x2, y2)))
             #     draw.text((x1, y1), names[int(labels[k, 0].item())])
-            # testt.save('/home/carson/Desktop/yolov3/yolov3/ground_truths/' + paths[si].split('.')[0].split('/')[-1] + '.png', "PNG")
+
+            # testt.save('kitti_ground_truths/' + paths[si].split('.')[0].split('/')[-1] + '.png', "PNG")
             
                 
 
@@ -254,7 +254,7 @@ def test(cfg,
             
 
         
-        #f = '/home/carson/Desktop/yolov3/yolov3/ground_truths/' + paths[si].split('.')[0].split('/')[-1] + 'gt.jpg'
+        #f = 'ground_truths/' + paths[si].split('.')[0].split('/')[-1] + 'gt.jpg'
         #plot_images(imgs, targets, paths=paths, names=names, fname=f)
             # arr = [(correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)]
             # arr = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
@@ -318,28 +318,28 @@ def test(cfg,
 
 
     # Save JSON
-    if save_json and map and len(jdict):
-        print('\nCOCO mAP with pycocotools...')
-        imgIds = [int(Path(x).stem.split('_')[-1].replace('frame', '').replace('thumb', '')) for x in dataloader.dataset.img_files]
-        imgIds.sort()
+    # if save_json and map and len(jdict):
+    #     print('\nCOCO mAP with pycocotools...')
+    #     imgIds = [int(Path(x).stem.split('_')[-1].replace('frame', '').replace('thumb', '')) for x in dataloader.dataset.img_files]
+    #     imgIds.sort()
 
-        with open('{}.json'.format(opt.dataset_name), 'w') as file:
-            json.dump(jdict, file)
+    #     with open('{}.json'.format(opt.dataset_name), 'w') as file:
+    #         json.dump(jdict, file)
 
-        from pycocotools.coco import COCO
-        from pycocotools.cocoeval import COCOeval
+    #     from pycocotools.coco import COCO
+    #     from pycocotools.cocoeval import COCOeval
 
-        # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-        cocoGt = COCO(glob.glob('coco/annotations/instances_{}.json'.format(opt.dataset_name))[0])
-        cocoDt = cocoGt.loadRes('{}.json'.format(opt.dataset_name))  # initialize COCO pred api
+    #     # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+    #     cocoGt = COCO(glob.glob('coco/annotations/instances_{}.json'.format(opt.dataset_name))[0])
+    #     cocoDt = cocoGt.loadRes('{}.json'.format(opt.dataset_name))  # initialize COCO pred api
 
-        results = np.zeros((len(imgIds), 4))
-        cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
-        cocoEval.params.imgIds = imgIds  # only evaluate these images
+    #     results = np.zeros((len(imgIds), 4))
+    #     cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+    #     cocoEval.params.imgIds = imgIds  # only evaluate these images
 
-        cocoEval.evaluate()
-        cocoEval.accumulate()
-        cocoEval.summarize()
+    #     cocoEval.evaluate()
+    #     cocoEval.accumulate()
+    #     cocoEval.summarize()
 
 
 
@@ -383,8 +383,8 @@ if __name__ == '__main__':
     parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='weights path')
     parser.add_argument('--batch-size', type=int, default=1, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
+    parser.add_argument('--conf-thres', type=float, default=0.001, help='object confidence threshold') # 0.3 for cams
+    parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS') # 0.4 for cams
     parser.add_argument('--save-json', action='store_true', help='save a cocoapi-compatible JSON results file')
     parser.add_argument('--task', default='test', help="'test', 'study', 'benchmark'")
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
@@ -392,6 +392,7 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
     parser.add_argument('--dataset_name', type=str, default='test', help='json file and folder names')  # output folder
+    parser.add_argument('--attenuation', type=str, default=1) 
     opt = parser.parse_args()
     opt.cfg = check_file(opt.cfg)  # check file
     opt.data = check_file(opt.data)  # check file

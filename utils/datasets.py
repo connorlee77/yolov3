@@ -311,9 +311,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
 
         # Define labels
-        self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
+        # self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
+        #                     for x in self.img_files]
+        self.label_files = [x.replace(os.path.basename(os.path.dirname(x)), 'labels').replace(os.path.splitext(x)[-1], '.txt')
                             for x in self.img_files]
-
         
 
         # Read image shapes (wh)
@@ -387,6 +388,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     nm += 1  # print('missing labels for image %s' % self.img_files[i])  # file missing
                     continue
 
+            l = l[l[:,0] >= 0]
             if l.shape[0]:
                 assert l.shape[1] == 5, '> 5 label columns: %s' % file
                 assert (l >= 0).all(), 'negative labels: %s' % file
