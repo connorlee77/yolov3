@@ -1,0 +1,9 @@
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=0
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=2
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=15
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=16
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=17
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=18
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=19
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=20
+python detect.py --source=/home/fremont/ford/yolov3/data/coco/images/val2017ood --device=0 --output=coco_val_ood_out --coco_index=21

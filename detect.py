@@ -150,12 +150,14 @@ def detect(save_img=False):
         img.requires_grad = True
         data = model(img)
         pred, x, features = data
-        # labels = x[0,index] >= 0
-        labels = torch.sigmoid(x) >= 0
+        # labels = torch.sigmoid(x) >= 0
+        prob = torch.sigmoid(x)
+        labels = prob >= 0 
+        val, indx = torch.topk(prob[0], 5)
+        # print(val, indx)
         # labels = torch.ones().to(device)
         criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        loss = criterion(x[0,:], labels[0,:].float())
-        print(x.shape)
+        loss = criterion(x[0,indx], labels[0,indx].float())
         # loss = criterion(x[0,index], labels.float())
         model.zero_grad()
         loss.backward()
@@ -165,21 +167,21 @@ def detect(save_img=False):
         # plt.imshow(a)
         # plt.show()
         # exit(0)
-        gradient = torch.ge(img.grad, 0)
-        gradient = (gradient.float() - 0.5) * 2
-        temp_img = img - 0.0014*gradient
+        # gradient = torch.ge(img.grad, 0)
+        # gradient = (gradient.float() - 0.5) * 2
+        # temp_img = img - 0.0014*gradient
         ## Perturb gradient ##
 
-        pred, temp_predictions, temp_features = model(temp_img)
+        # pred, temp_predictions, temp_features = model(temp_img)
 
-        data = model(img)
-        pred, x, features = data
+        # data = model(img)
+        # pred, x, features = data
 
         # class_idx = list(range(0,80))
         size_upsample = im0s.shape[0:2]
 
         cam = gradCAM(model, None, img, index, device, size_upsample)
-        temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
+        # temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
 
         # result = []
         # predictions = torch.sigmoid(x).flatten()
@@ -317,10 +319,10 @@ def detect(save_img=False):
 
                 save_file = os.path.basename(save_path).split('.')[0] + '.mat'
 
-                diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_diff', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
+                # diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
+                # new_folder = os.path.join(out + '_diff', names[index])
+                # make_folder(new_folder)
+                # savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
 
                 # cam[cam < 1e-5] = 10000000000
                 # div_cam = torch.div(temp_cam, cam)                
