@@ -132,6 +132,8 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
 
+    total_time_sum = 0
+    count = 0
     for path, img, im0s, vid_cap in dataset:
         fname = os.path.basename(path).split('.')[0]
 
@@ -150,20 +152,21 @@ def detect(save_img=False):
         img.requires_grad = True
         data = model(img)
         pred, x, features = data
-        # labels = torch.sigmoid(x) >= 0
-        prob = torch.sigmoid(x)
-        labels = prob >= 0 
-        val, indx = torch.topk(prob[0], 5)
-        # print(val, indx)
-        # labels = torch.ones().to(device)
-        criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        loss = criterion(x[0,indx], labels[0,indx].float())
-        # loss = criterion(x[0,index], labels.float())
-        model.zero_grad()
-        loss.backward()
+
+
+        # prob = torch.sigmoid(x)
+        # labels = prob >= 0 
+
+        # criterion = nn.BCEWithLogitsLoss(reduction='mean')
+        # loss = criterion(x[0,:], labels[0,:].float())
+        
+        # model.zero_grad()
+        # loss.backward()
+        # a = torch.norm(img.grad, dim=1, keepdim=True)
+
+
 
         # gradient = img.grad
-        a = torch.norm(img.grad, dim=1, keepdim=True)
         # plt.imshow(a)
         # plt.show()
         # exit(0)
@@ -208,7 +211,8 @@ def detect(save_img=False):
         # print(result)
 
         t2 = torch_utils.time_synchronized()
-
+        total_time_sum += (t2-t1)
+        count += 1
         # to float
         if half:
             pred = pred.float()
@@ -246,76 +250,11 @@ def detect(save_img=False):
             #             plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
 
             # # Print time (inference + NMS)
-            print('%sDone. (%.3fs)' % (s, t2 - t1))
+            print('%sDone. (%.3fs) Running Avg:(%.4fs)' % (s, t2 - t1, total_time_sum / count))
 
 
             # Save results (image with detections)
             if save_img:
-
-                # denom_cam = cam.clone()
-                # denom_cam[denom_cam < 1e-3] = 1e10
-                # percent_increase = (temp_cam - cam) / denom_cam
-
-                # fig = plt.figure()
-                # ax = fig.add_subplot(111)
-                # plt.imshow(percent_increase.squeeze().cpu().detach().numpy())
-                # plt.colorbar()
-                # plt.show()
-                
-                
-                # percent_increase = 255*(percent_increase.squeeze().cpu().detach().numpy() > 1e-2)
-                # data_slices = find_paws(percent_increase, smooth_radius = 20, threshold = 22)
-                # bboxes = slice_to_bbox(data_slices)
-                # for bbox in bboxes:
-                #     xwidth = bbox.x2 - bbox.x1
-                #     ywidth = bbox.y2 - bbox.y1
-                #     p = patches.Rectangle((bbox.x1, bbox.y1), xwidth, ywidth,
-                #                           fc = 'none', ec = 'red')
-                #     ax.add_patch(p)
-
-                # plt.show()
-
-
-                # diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
-                # # plt.imshow(diff_cam)
-                # # plt.colorbar()
-                # # plt.show()
-                # print(np.min(diff_cam), np.max(diff_cam))
-                # # diff_cam -= np.min(diff_cam)
-                # # diff_cam /= np.max(diff_cam)
-                # diff_cam /= 0.01
-
-                # heatmap = cv2.applyColorMap(np.uint8(255*diff_cam), cv2.COLORMAP_JET)
-
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_diff', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
-
-                # cam = cam.squeeze().cpu().detach().numpy()
-                # cam -= np.min(cam)
-                # cam /= np.max(cam)
-
-                # heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
-
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_cam', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
-                # temp_cam = temp_cam.squeeze().cpu().detach().numpy()
-                # temp_cam -= np.min(temp_cam)
-                # temp_cam /= np.max(temp_cam)
-
-                # heatmap = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
-
-                # new_img = heatmap*0.3 + im0*0.5
-                # new_folder = os.path.join(out + '_temp_cam', names[index])
-                # make_folder(new_folder)
-                # cv2.imwrite(os.path.join(new_folder, os.path.basename(save_path)), new_img)
-
-
 
                 save_file = os.path.basename(save_path).split('.')[0] + '.mat'
 
@@ -324,29 +263,17 @@ def detect(save_img=False):
                 # make_folder(new_folder)
                 # savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
 
-                # cam[cam < 1e-5] = 10000000000
-                # div_cam = torch.div(temp_cam, cam)                
-                # div_cam = div_cam.squeeze().cpu().detach().numpy()
-                # new_folder = os.path.join(out + '_ratio', names[index])
+                # cam = cam.squeeze().cpu().detach().numpy()
+                # new_folder = os.path.join(out + '_cam', names[index])
                 # make_folder(new_folder)
-                # savemat(os.path.join(new_folder, save_file), mdict={'cam': div_cam})
+                # savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
 
-
-                cam = cam.squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_cam', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
-
-                gradient = a
-                gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_gradient', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
-
-                # gradient_cam = temp_cam.squeeze().cpu().detach().numpy()
-                # new_folder = os.path.join(out + '_gradient_cam', names[index])
+                # gradient = a
+                # gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
+                # new_folder = os.path.join(out + '_gradient', names[index])
                 # make_folder(new_folder)
-                # savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient_cam})
+                # savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
+
 
 
     print('Done. (%.3fs)' % (time.time() - t0))
