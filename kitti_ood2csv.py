@@ -28,8 +28,10 @@ def kitti(setname):
     frames = glob.glob(os.path.join('/home/fremont/ford/kitti/training/yolo/kitti_ood/labels', '*.txt'))
     IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/kitti_ood/images'
 
-    column_names = ['image', 'class', 'x1', 'y1', 'x2', 'y2']
+    # frames = glob.glob(os.path.join('/home/fremont/ford/yolov3/data/coco/labels/val2017ood', '*.txt'))
+    # IMAGE_PATH = '/home/fremont/ford/yolov3/data/coco/images/val2017ood'
 
+    column_names = ['image', 'class', 'x1', 'y1', 'x2', 'y2']
     class_names = set(load_classes('data/coco.names'))
 
     classes = os.listdir('kitti_{}_out_cam'.format(setname))
@@ -38,11 +40,11 @@ def kitti(setname):
         column_names.append(c + '_cam_max')
         column_names.append(c + '_diff_max')
         column_names.append(c + '_grad_max')
-        column_names.append(c + '_ratio_max')
+        # column_names.append(c + '_ratio_max')
         column_names.append(c + '_cam_mean')
         column_names.append(c + '_diff_mean')
         column_names.append(c + '_grad_mean')
-        column_names.append(c + '_ratio_mean')
+        # column_names.append(c + '_ratio_mean')
 
     data = []
     counter = 0
@@ -60,7 +62,7 @@ def kitti(setname):
             if class_num >= 0:
                 class_name = coco_names[class_num]
             else:
-                class_name = 'ood-mnist'
+                class_name = 'ood'
 
             bbox = label[1:].astype(float)
             bbox[[0,2]] *= W
@@ -69,40 +71,40 @@ def kitti(setname):
             x1, x2 = int(bbox[0] - bbox[2]/2), int(bbox[0] + bbox[2]/2)
             y1, y2 = int(bbox[1] - bbox[3]/2), int(bbox[1] + bbox[3]/2)
 
-
             row = [image_name, class_name, x1,y1,x2,y2]
             for name in classes:
                 cam_mat = loadmat(os.path.join('kitti_{}_out_cam'.format(setname), name, matname))['cam']
-                diff_mat = loadmat(os.path.join('kitti_{}_out_diff'.format(setname), name, matname))['cam']
-                grad_mat = loadmat(os.path.join('kitti_{}_out_gradient'.format(setname), name, matname))['cam']
-                ratio_mat = loadmat(os.path.join('kitti_{}_out_ratio'.format(setname), name, matname))['cam']
+                diff_mat = loadmat(os.path.join('kitti_{}_out_diff_0257'.format(setname), name, matname))['cam']
+                grad_mat = loadmat(os.path.join('kitti_{}_out_gradient_0257'.format(setname), name, matname))['cam']
+                # ratio_mat = loadmat(os.path.join('kitti_{}_out_ratio'.format(setname), name, matname))['cam']
 
                 cam_bbox = cam_mat[y1:y2, x1:x2]
                 diff_bbox = diff_mat[y1:y2, x1:x2]
                 grad_bbox = grad_mat[y1:y2, x1:x2]
-                ratio_bbox = ratio_mat[y1:y2, x1:x2]
+                # ratio_bbox = ratio_mat[y1:y2, x1:x2]
 
                 cam_max = np.max(cam_bbox)
                 diff_max = np.max(diff_bbox)
                 grad_max = np.max(grad_bbox)
-                ratio_max = np.max(ratio_bbox)
+                # ratio_max = np.max(ratio_bbox)
                 row.append(cam_max)
                 row.append(diff_max)
                 row.append(grad_max)
-                row.append(ratio_max)
+                # row.append(ratio_max)
 
                 cam_mean = np.mean(cam_bbox)
                 diff_mean = np.mean(diff_bbox)
                 grad_mean = np.mean(grad_bbox)
-                ratio_mean = np.mean(ratio_bbox)
+                # ratio_mean = np.mean(ratio_bbox)
                 row.append(cam_mean)
                 row.append(diff_mean)
                 row.append(grad_mean)
-                row.append(ratio_mean)
+                # row.append(ratio_mean)
 
             data.append(row)
+
     df = pd.DataFrame(data, columns=column_names, dtype=float)
-    df.to_csv('kitti_{}01.csv'.format(setname))
+    df.to_csv('kitti_{}_0257.csv'.format(setname))
     print(counter / len(data))
 if __name__ == '__main__':
     

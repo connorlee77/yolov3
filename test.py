@@ -220,9 +220,9 @@ def test(cfg,
 
                 # False negatives
                 for i, p in enumerate(tbox):
-                    if negatives[i].item():
+                    if negatives[i].item() or i not in detected:
                         pred_labeled.append([*p.cpu().numpy().tolist(), -1, labels[i, 0].item(), -1])
-                        
+
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
             num_falses.append(len(correct.cpu()) - np.count_nonzero(correct.cpu()))

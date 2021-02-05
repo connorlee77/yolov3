@@ -154,61 +154,37 @@ def detect(save_img=False):
         pred, x, features = data
 
 
-        # prob = torch.sigmoid(x)
-        # labels = prob >= 0 
-
-        # criterion = nn.BCEWithLogitsLoss(reduction='mean')
-        # loss = criterion(x[0,:], labels[0,:].float())
+        prob = torch.sigmoid(x)
+        labels = prob >= 0
+        criterion = nn.BCEWithLogitsLoss(reduction='sum')
+        loss = criterion(x[0,:], labels[0,:].float())
         
-        # model.zero_grad()
-        # loss.backward()
-        # a = torch.norm(img.grad, dim=1, keepdim=True)
+        model.zero_grad()
+        loss.backward()
+        a = torch.norm(img.grad, dim=1, keepdim=True)
 
 
 
-        # gradient = img.grad
+        gradient = img.grad
         # plt.imshow(a)
         # plt.show()
         # exit(0)
-        # gradient = torch.ge(img.grad, 0)
-        # gradient = (gradient.float() - 0.5) * 2
-        # temp_img = img - 0.0014*gradient
+        gradient = torch.ge(img.grad, 0).float()
+        gradient = (gradient.float() - 0.5) * 2
+        temp_img = img - 0.01*gradient
+        # temp_img = img + 0.009*gradient
         ## Perturb gradient ##
 
-        # pred, temp_predictions, temp_features = model(temp_img)
+        pred, temp_predictions, temp_features = model(temp_img)
 
-        # data = model(img)
-        # pred, x, features = data
+        data = model(img)
+        pred, x, features = data
 
         # class_idx = list(range(0,80))
         size_upsample = im0s.shape[0:2]
 
         cam = gradCAM(model, None, img, index, device, size_upsample)
-        # temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
-
-        # result = []
-        # predictions = torch.sigmoid(x).flatten()
-        # for i in range(80):
-        #     if predictions[i] > 0.5:
-        #         result.append([names[i], predictions[i].item()])
-        # print(result)
-        # # print(predictions[index])
-
-        # result = []
-        # temp_predictions = torch.sigmoid(temp_predictions).flatten()
-        # for i in range(80):
-        #     if temp_predictions[i] > 0.0:
-        #         result.append([names[i], temp_predictions[i].item()])
-        # print(result)
-        # print(temp_predictions[index])
-        # print(predictions[index] / temp_predictions[index])
-        # predictions = torch.sigmoid(predictions).flatten()
-        # temp_predictions = torch.sigmoid(temp_predictions).flatten()
-        # result = []
-        # for i in range(80):
-        #     if predictions[i] > 0.75:
-        #         result.append([names[i], abs(predictions[i].item() - temp_predictions[i].item())])
-        # print(result)
+        temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
 
         t2 = torch_utils.time_synchronized()
         total_time_sum += (t2-t1)
@@ -258,22 +234,54 @@ def detect(save_img=False):
 
                 save_file = os.path.basename(save_path).split('.')[0] + '.mat'
 
-                # diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
-                # new_folder = os.path.join(out + '_diff', names[index])
-                # make_folder(new_folder)
-                # savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
+                diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
+                new_folder = os.path.join(out + '_diff', names[index])
+                make_folder(new_folder)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
 
-                # cam = cam.squeeze().cpu().detach().numpy()
-                # new_folder = os.path.join(out + '_cam', names[index])
-                # make_folder(new_folder)
-                # savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
+                cam = cam.squeeze().cpu().detach().numpy()
+                new_folder = os.path.join(out + '_cam', names[index])
+                make_folder(new_folder)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
 
-                # gradient = a
-                # gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
-                # new_folder = os.path.join(out + '_gradient', names[index])
-                # make_folder(new_folder)
-                # savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
 
+                temp_cam = temp_cam.squeeze().cpu().detach().numpy()
+                new_folder = os.path.join(out + '_tempcam', names[index])
+                make_folder(new_folder)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': temp_cam})
+
+                gradient = a
+                gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
+                new_folder = os.path.join(out + '_gradient', names[index])
+                make_folder(new_folder)
+                savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
+
+                temp_cam = temp_cam - np.min(temp_cam)
+                temp_cam = temp_cam / np.max(temp_cam)
+                temp_cam = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
+
+                overlay_temp = im0*0.5 + 0.4*temp_cam
+
+
+                cam = cam - np.min(cam)
+                cam = cam / np.max(cam)
+                cam = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
+
+                overlay_cam = im0*0.5 + 0.4*cam
+
+                gradient[gradient > np.percentile(gradient, 99)] = np.percentile(gradient, 99)
+                gradient = gradient - np.min(gradient)
+                gradient = gradient / np.max(gradient)
+                gradient = cv2.applyColorMap(np.uint8(255*gradient), cv2.COLORMAP_JET)
+
+                overlay_gradient = im0*0.5 + 0.4*gradient
+
+
+                cv2.imshow('perturbed', np.uint8(overlay_temp))
+                cv2.imshow('cam', np.uint8(overlay_cam))
+                cv2.imshow('grad', np.uint8(overlay_gradient))
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
 
 
     print('Done. (%.3fs)' % (time.time() - t0))

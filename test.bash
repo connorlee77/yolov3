@@ -5,3 +5,5 @@ python test.py --data=data/kitti7k.data --conf-thres=0.3 --iou-thres=0.4 --atten
 python test.py --data=data/kitti10k.data --conf-thres=0.3 --iou-thres=0.4 --attenuation='10k_' --device=0
 
 python test.py --data=data/kittiOOD.data --conf-thres=0.001 --iou-thres=0.4 --attenuation='ood_' --device=0
+
+python test.py --data=data/kittiOOD.data --conf-thres=0.3 --iou-thres=0.4 --attenuation='ood_' --device=0
