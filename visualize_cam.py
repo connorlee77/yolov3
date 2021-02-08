@@ -10,8 +10,8 @@ def normalize(img):
 	img = img / np.max(img)
 	return img
 
-KITTI_CAM_PATH = 'kitti_ood_out_cam'
-KITTI_GRAD_PATH = 'kitti_ood_out_gradient'
+KITTI_CAM_PATH = 'kitti_ood_1eN4_noclip_out_cam'
+KITTI_GRAD_PATH = 'kitti_ood_1eN4_noclip_out_gradient'
 # KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/images'
 KITTI_IMAGE_PATH = 'kitti_ood_stat_samples'
 # KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/kitti_ood/images'
@@ -24,7 +24,10 @@ grad_lst = []
 cam_lst = []
 for image_path in tqdm.tqdm(images):
 	img_name = os.path.basename(image_path).split('.')[0]
+	img_name = '000349'
+	image_path = 'kitti_ood_stat_samples/000349.png'
 	img = cv2.imread(image_path)
+	print(img.shape)
 	cam = loadmat(os.path.join(KITTI_CAM_PATH, 'car', '{}.mat'.format(img_name)))['cam']
 	grad = loadmat(os.path.join(KITTI_GRAD_PATH, 'car', '{}.mat'.format(img_name)))['cam']
 

@@ -161,17 +161,15 @@ def detect(save_img=False):
         
         model.zero_grad()
         loss.backward()
-        a = torch.norm(img.grad, dim=1, keepdim=True)
-
-
 
         gradient = img.grad
+        a = torch.norm(gradient, dim=1, keepdim=True)
         # plt.imshow(a)
         # plt.show()
         # exit(0)
         gradient = torch.ge(img.grad, 0).float()
         gradient = (gradient.float() - 0.5) * 2
-        temp_img = img - 0.01*gradient
+        temp_img = img - 1e-4*gradient
         # temp_img = img + 0.009*gradient
         ## Perturb gradient ##
 
@@ -234,7 +232,7 @@ def detect(save_img=False):
 
                 save_file = os.path.basename(save_path).split('.')[0] + '.mat'
 
-                diff_cam = torch.abs(cam - temp_cam).squeeze().cpu().detach().numpy()
+                diff_cam = (cam - temp_cam).squeeze().cpu().detach().numpy()
                 new_folder = os.path.join(out + '_diff', names[index])
                 make_folder(new_folder)
                 savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
@@ -243,7 +241,6 @@ def detect(save_img=False):
                 new_folder = os.path.join(out + '_cam', names[index])
                 make_folder(new_folder)
                 savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
-
 
                 temp_cam = temp_cam.squeeze().cpu().detach().numpy()
                 new_folder = os.path.join(out + '_tempcam', names[index])
@@ -256,12 +253,13 @@ def detect(save_img=False):
                 make_folder(new_folder)
                 savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
 
-                temp_cam = temp_cam - np.min(temp_cam)
-                temp_cam = temp_cam / np.max(temp_cam)
-                temp_cam = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
+                # temp_cam = temp_cam - np.min(temp_cam)
+                # temp_cam = temp_cam / np.max(temp_cam)
+                # temp_cam = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
 
-                overlay_temp = im0*0.5 + 0.4*temp_cam
+                # overlay_temp = im0*0.5 + 0.4*temp_cam
 
+                print(np.median(cam))
 
                 cam = cam - np.min(cam)
                 cam = cam / np.max(cam)
@@ -269,17 +267,17 @@ def detect(save_img=False):
 
                 overlay_cam = im0*0.5 + 0.4*cam
 
-                gradient[gradient > np.percentile(gradient, 99)] = np.percentile(gradient, 99)
-                gradient = gradient - np.min(gradient)
-                gradient = gradient / np.max(gradient)
-                gradient = cv2.applyColorMap(np.uint8(255*gradient), cv2.COLORMAP_JET)
+                # gradient[gradient > np.percentile(gradient, 99)] = np.percentile(gradient, 99)
+                # gradient = gradient - np.min(gradient)
+                # gradient = gradient / np.max(gradient)
+                # gradient = cv2.applyColorMap(np.uint8(255*gradient), cv2.COLORMAP_JET)
 
-                overlay_gradient = im0*0.5 + 0.4*gradient
+                # overlay_gradient = im0*0.5 + 0.4*gradient
 
 
-                cv2.imshow('perturbed', np.uint8(overlay_temp))
+                # cv2.imshow('perturbed', np.uint8(overlay_temp))
                 cv2.imshow('cam', np.uint8(overlay_cam))
-                cv2.imshow('grad', np.uint8(overlay_gradient))
+                # cv2.imshow('grad', np.uint8(overlay_gradient))
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
