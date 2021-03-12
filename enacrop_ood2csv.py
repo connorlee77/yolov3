@@ -10,27 +10,13 @@ import cv2
 from PIL import Image
 from scipy.ndimage.filters import gaussian_filter
 
-with open('data/coco.names') as f:
-    coco_names = [x.strip() for x in f.readlines()]
+def kitti():
 
-def kitti(setname):
-
-    kitti2coco = {
-        'Car' : 'car',
-        'Van' : 'car',
-        'Truck' : 'truck',
-        'Pedestrian' : 'person',
-        'Person_sitting' : 'person',
-        'Cyclist' : 'person',
-        'Tram' : 'train'
-    }
-
-    frames = glob.glob(os.path.join('/home/fremont/ford/serengeti/ena24_crop/Virginia_Opossum', '*.jpg'))
+    frames = glob.glob(os.path.join(frames_path, '*'))
 
     column_names = ['image', 'class', 'x1', 'y1', 'x2', 'y2']
-    class_names = set(load_classes('data/coco.names'))
 
-    classes = os.listdir('ena24_opposum_cam')
+    classes = os.listdir(cam_path)
     classes.sort()
     for c in classes:
         column_names.append(c + '_cam_max')
@@ -41,6 +27,10 @@ def kitti(setname):
         column_names.append(c + '_diff_median')
         column_names.append(c + '_grad_median')
         column_names.append(c + '_temp_median')
+        column_names.append(c + '_cam_mean')
+        column_names.append(c + '_diff_mean')
+        column_names.append(c + '_grad_mean')
+        column_names.append(c + '_temp_mean')
 
     data = []
     counter = 0
@@ -52,17 +42,15 @@ def kitti(setname):
 
         matname = image_name.replace('jpg', 'mat')
 
-        class_name = 'ood'
-
         x1, x2 = 0, W
         y1, y2 = 0, H
 
         row = [image_name, class_name, x1,y1,x2,y2]
         for name in classes:
-            cam_mat = loadmat(os.path.join('ena24_opposum_cam', name, matname))['cam']
-            diff_mat = loadmat(os.path.join('ena24_opposum_diff', name, matname))['cam']
-            grad_mat = loadmat(os.path.join('ena24_opposum_gradient', name, matname))['cam']
-            temp_mat = loadmat(os.path.join('ena24_opposum_tempcam', name, matname))['cam']
+            cam_mat = loadmat(os.path.join(cam_path, name, matname))['cam']
+            diff_mat = loadmat(os.path.join(diff_path, name, matname))['cam']
+            grad_mat = loadmat(os.path.join(grad_path, name, matname))['cam']
+            temp_mat = loadmat(os.path.join(temp_path, name, matname))['cam']
 
             cam_bbox = cam_mat[y1:y2, x1:x2]
             diff_bbox = diff_mat[y1:y2, x1:x2]
@@ -87,12 +75,35 @@ def kitti(setname):
             row.append(grad_median)
             row.append(temp_median)
 
+            cam_mean = np.mean(cam_bbox)
+            diff_mean = np.mean(diff_bbox)
+            grad_mean = np.mean(grad_bbox)
+            temp_mean = np.mean(temp_bbox)
+            row.append(cam_mean)
+            row.append(diff_mean)
+            row.append(grad_mean)
+            row.append(temp_mean)
+
+
         data.append(row)
 
     df = pd.DataFrame(data, columns=column_names, dtype=float)
-    df.to_csv('ena24crop_opposum.csv'.format(setname))
+    df.to_csv(save_name)
     print(counter / len(data))
 if __name__ == '__main__':
-    
-    kitti('ood')
+    # frames_path = '/home/fremont/ford/serengeti/ena24_crops'
+    # cam_path = 'ena_crops_out_cam'
+    # diff_path = 'ena_crops_out_diff'
+    # temp_path = 'ena_crops_out_tempcam'
+    # grad_path = 'ena_crops_out_gradient'
+    # save_name = 'ena_crop_cams.csv'
+
+    frames_path = '/home/fremont/ford/kitti/training/yolo/images_crops'
+    cam_path = 'kitti_crops_out_cam'
+    diff_path = 'kitti_crops_out_diff'
+    temp_path = 'kitti_crops_out_tempcam'
+    grad_path = 'kitti_crops_out_gradient'
+    save_name = 'kitti_crop_cams.csv'
+    class_name = 'kitti-crop'
+    kitti()
 

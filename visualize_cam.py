@@ -10,22 +10,22 @@ def normalize(img):
 	img = img / np.max(img)
 	return img
 
-KITTI_CAM_PATH = 'kitti_ood_1eN4_noclip_out_cam'
-KITTI_GRAD_PATH = 'kitti_ood_1eN4_noclip_out_gradient'
-# KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/images'
-KITTI_IMAGE_PATH = 'kitti_ood_stat_samples'
+KITTI_CAM_PATH = 'kitti_out_cam'
+KITTI_GRAD_PATH = 'kitti_out_gradient'
+KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/images'
+# KITTI_IMAGE_PATH = 'kitti_stat_samples'
 # KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/kitti_ood/images'
-
+# KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/4000'
 
 images = glob.glob(os.path.join(KITTI_IMAGE_PATH, '*'))
 
 
 grad_lst = []
 cam_lst = []
-for image_path in tqdm.tqdm(images):
+for i, image_path in tqdm.tqdm(enumerate(images)):
 	img_name = os.path.basename(image_path).split('.')[0]
-	img_name = '000349'
-	image_path = 'kitti_ood_stat_samples/000349.png'
+	# img_name = '000000'
+	# image_path = 'kitti_ood_stat_samples/000000.png'
 	img = cv2.imread(image_path)
 	print(img.shape)
 	cam = loadmat(os.path.join(KITTI_CAM_PATH, 'car', '{}.mat'.format(img_name)))['cam']
@@ -46,12 +46,15 @@ for image_path in tqdm.tqdm(images):
 
 	overlay_cam = img*0.5 + 0.4*cam
 	overlay_grad = img*0.5 + 0.5*grad
-	# cv2.imwrite(os.path.join('kitti_cams_vis', '{}_cam.jpg'.format(img_name)), overlay_cam)
-	# cv2.imwrite(os.path.join('kitti_grads_vis', '{}_grad.jpg'.format(img_name)), overlay_grad)
-	cv2.imshow(img_name, np.uint8(overlay_grad))
-	cv2.imshow(img_name, np.uint8(overlay_cam))
-	cv2.waitKey(0)
-	cv2.destroyAllWindows()
+	cv2.imwrite(os.path.join('kitti_cams_vis', '{}_cam.jpg'.format(img_name)), overlay_cam)
+	cv2.imwrite(os.path.join('kitti_grads_vis', '{}_grad.jpg'.format(img_name)), overlay_grad)
+	# cv2.imshow(img_name + 'grad', np.uint8(overlay_grad))
+	# cv2.imshow(img_name, np.uint8(overlay_cam))
+	# cv2.waitKey(0)
+	# cv2.destroyAllWindows()
+
+	if i == 200:
+		break
 
 
 cam_lst = np.array(cam_lst)

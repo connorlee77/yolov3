@@ -1,0 +1,2 @@
+python detect.py --source=/home/fremont/ford/serengeti/ena24_crops --device=1 --output=ena_crops_out --coco_index=5
+python detect.py --source=/home/fremont/ford/serengeti/ena24_crops --device=1 --output=ena_crops_out --coco_index=7

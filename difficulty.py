@@ -102,7 +102,7 @@ def kitti(setname):
     frames = glob.glob(os.path.join('/home/fremont/ford/kitti/training/label_2', '*.txt'))
     gradient_PATH = 'kitti_{}out_gradient'.format(setname)
 
-
+    KITTI_IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/images'
     column_names = ['image', 'class', 'x1', 'y1', 'x2', 'y2', 'height', 'width', 'area', 'truncated', 'occluded', 'alpha', 'difficulty', 'depth_max', 'depth_min', 'depth_mean']
 
     class_names = set(load_classes('data/coco.names'))
@@ -119,14 +119,24 @@ def kitti(setname):
 
     data = []
     counter = 0
-    for frame in tqdm.tqdm(frames):        
+    for frame in tqdm.tqdm(frames):
+        frame = '/home/fremont/ford/kitti/training/label_2/000002.txt'        
         labels = np.genfromtxt(frame, delimiter=" ", dtype='str')
         image_name = os.path.basename(frame).replace('txt', 'png')
 
-        depth_image_path = os.path.join(DEPTH_DATA_PATH, image_name)
-        zimg = 1.0 / np.array(Image.open(depth_image_path))
-        zimg = gaussian_filter(zimg, sigma=2)
+        
+        img = cv2.imread(os.path.join(KITTI_IMAGE_PATH, image_name))
+        # cv2.imshow('imig', img)
+        # cv2.waitKey(0)
 
+        depth_image_path = os.path.join(DEPTH_DATA_PATH, image_name)
+        zimg = 99505.81485 / np.array(Image.open(depth_image_path))
+        # zimg = gaussian_filter(zimg, sigma=2)
+        import matplotlib.pyplot as plt
+        zimg[zimg > np.percentile(zimg, 99.5)] = np.percentile(zimg, 99.5)
+        plt.imshow(zimg)
+        plt.show()
+        exit(0)
         matname = image_name.replace('png', 'mat')
         for label in labels:
             kitti_name = label[0]
@@ -191,7 +201,7 @@ def kitti(setname):
 
             data.append(row)
     df = pd.DataFrame(data, columns=column_names, dtype=float)
-    df.to_csv('kitti_{}val_difficulty.csv'.format(setname))
+    # df.to_csv('kitti_{}val_difficulty_v2.csv'.format(setname))
     print(df[['height', 'width', 'area', 'occluded', 'truncated', 'alpha', 'difficulty']])
     print(counter / len(data))
 if __name__ == '__main__':

@@ -8,36 +8,34 @@ from utils.utils import load_classes
 import tqdm
 import cv2
 from PIL import Image
-from scipy.ndimage.filters import gaussian_filter
 
-with open('data/coco.names') as f:
-    coco_names = [x.strip() for x in f.readlines()]
+classes2ignore = ['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'bear', 'human', 'vehicle', 'American Crow', 'woodchuck', 'Chicken', 'turkey']
 
-def kitti(setname):
 
-    kitti2coco = {
-        'Car' : 'car',
-        'Van' : 'car',
-        'Truck' : 'truck',
-        'Pedestrian' : 'person',
-        'Person_sitting' : 'person',
-        'Cyclist' : 'person',
-        'Tram' : 'train'
-    }
 
-    # frames = glob.glob(os.path.join('/home/fremont/ford/kitti/training/yolo/kitti_ood/labels', '*.txt'))
-    # IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/kitti_ood/images'
+with open('/home/fremont/ford/serengeti/ena24.json') as f:
+    data = json.load(f)
 
-    frames = glob.glob(os.path.join('/home/fremont/ford/kitti/training/yolo/labels', '*.txt'))
-    IMAGE_PATH = '/home/fremont/ford/kitti/training/yolo/images'
+ena_classes = {}
+for cat in data['categories']:
+    
+    keep = True
+    for ignorecls in classes2ignore:
+        if ignorecls.lower() in cat['name'].lower():
+            keep = False
+            break
 
-    # frames = glob.glob(os.path.join('/home/fremont/ford/yolov3/data/coco/labels/val2017ood', '*.txt'))
-    # IMAGE_PATH = '/home/fremont/ford/yolov3/data/coco/images/val2017ood'
+    if keep:
+        ena_classes[cat['id']] = cat['name']
+
+def dataset():
+
+    frames = glob.glob(os.path.join('/home/fremont/ford/serengeti/labels', '*.txt'))
+    IMAGE_PATH = '/home/fremont/ford/serengeti/ena24_subset'
 
     column_names = ['image', 'class', 'x1', 'y1', 'x2', 'y2']
-    class_names = set(load_classes('data/coco.names'))
 
-    classes = os.listdir('kitti_out_cam'.format(setname))
+    classes = os.listdir('ena_out_cam')
     classes.sort()
     for c in classes:
         column_names.append(c + '_cam_max')
@@ -59,18 +57,14 @@ def kitti(setname):
         labels = np.genfromtxt(frame, delimiter=" ", dtype=np.float)
         if labels.ndim == 1:
             labels = np.expand_dims(labels, axis=0)
-        image_name = os.path.basename(frame).replace('txt', 'png')
+        image_name = os.path.basename(frame).replace('txt', 'jpg')
         img = cv2.imread(os.path.join(IMAGE_PATH, image_name))
         H, W, C = img.shape
 
-        matname = image_name.replace('png', 'mat')
+        matname = image_name.replace('jpg', 'mat')
         for label in labels:
             class_num = int(label[0])
-            if class_num >= 0:
-                class_name = coco_names[class_num]
-            else:
-                class_name = 'ood'
-                print('ood')
+            class_name = ena_classes[class_num - 80]
 
             bbox = label[1:].astype(float)
             bbox[[0,2]] *= W
@@ -81,10 +75,10 @@ def kitti(setname):
 
             row = [image_name, class_name, x1,y1,x2,y2]
             for name in classes:
-                cam_mat = loadmat(os.path.join('kitti_out_cam'.format(setname), name, matname))['cam']
-                diff_mat = loadmat(os.path.join('kitti_out_diff'.format(setname), name, matname))['cam']
-                grad_mat = loadmat(os.path.join('kitti_out_gradient'.format(setname), name, matname))['cam']
-                temp_mat = loadmat(os.path.join('kitti_out_tempcam'.format(setname), name, matname))['cam']
+                cam_mat = loadmat(os.path.join('ena_out_cam', name, matname))['cam']
+                diff_mat = loadmat(os.path.join('ena_out_diff', name, matname))['cam']
+                grad_mat = loadmat(os.path.join('ena_out_gradient', name, matname))['cam']
+                temp_mat = loadmat(os.path.join('ena_out_tempcam', name, matname))['cam']
 
                 cam_bbox = cam_mat[y1:y2, x1:x2]
                 diff_bbox = diff_mat[y1:y2, x1:x2]
@@ -121,9 +115,9 @@ def kitti(setname):
             data.append(row)
 
     df = pd.DataFrame(data, columns=column_names, dtype=float)
-    df.to_csv('kitti_cams.csv'.format(setname))
+    df.to_csv('ena_cams.csv')
     print(counter / len(data))
 if __name__ == '__main__':
     
-    kitti('ood')
+    dataset()
 

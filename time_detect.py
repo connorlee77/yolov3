@@ -132,12 +132,12 @@ def detect(save_img=False):
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img.float()) if device.type != 'cpu' else None  # run once
 
-    total_time_sum = 0
+    total_gradcam_time = 0
+    total_gradient_time = 0
+    total_yolo_time = 0
     count = 0
     for path, img, im0s, vid_cap in dataset:
         fname = os.path.basename(path).split('.')[0]
-
-        # cv2.imwrite('resized_input_{}/{}.png'.format(out, fname), img.transpose(1, 2, 0))
 
         img = torch.from_numpy(img).to(device)
 
@@ -148,12 +148,15 @@ def detect(save_img=False):
 
         # Inference
         index = opt.coco_index
+        
         t1 = torch_utils.time_synchronized()
+
         img.requires_grad = True
         data = model(img)
         pred, x, features = data
 
-
+        t2 = torch_utils.time_synchronized()
+        
         prob = torch.sigmoid(x)
         labels = prob >= 0
         criterion = nn.BCEWithLogitsLoss(reduction='sum')
@@ -161,128 +164,25 @@ def detect(save_img=False):
         
         model.zero_grad()
         loss.backward()
-
         gradient = img.grad
         a = torch.norm(gradient, dim=1, keepdim=True)
-        # plt.imshow(a)
-        # plt.show()
-        # exit(0)
-        gradient = torch.ge(img.grad, 0).float()
-        gradient = (gradient.float() - 0.5) * 2
-        temp_img = img - 0.0014*gradient
-        # temp_img = img + 0.009*gradient
-        ## Perturb gradient ##
+        
 
-        pred, temp_predictions, temp_features = model(temp_img)
+        t3 = torch_utils.time_synchronized()
 
-        data = model(img)
-        pred, x, features = data
-
-        # class_idx = list(range(0,80))
         size_upsample = im0s.shape[0:2]
-
         cam = gradCAM(model, None, img, index, device, size_upsample)
-        temp_cam = gradCAM(model, None, temp_img, index, device, size_upsample)
 
-        t2 = torch_utils.time_synchronized()
-        total_time_sum += (t2-t1)
+        t4 = torch_utils.time_synchronized()
+
+
+        total_gradcam_time += (t4-t3)
+        total_gradient_time += (t3 - t2)
+        total_yolo_time += (t2-t1)
         count += 1
-        # to float
-        if half:
-            pred = pred.float()
+        print(t4 - t3, t3 - t2, t2 - t1)
 
-        # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
-
-        # Process detections
-        for i, det in enumerate(pred):  # detections for image i
-            p, s, im0 = path, '', im0s
-
-            save_path = str(Path(out) / Path(p).name)
-            s += '%gx%g ' % img.shape[2:]  # print string
-            # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
-            # if det is not None and len(det):
-            #     # Rescale boxes from imgsz to im0 size
-            #     det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-
-            #     # Print results
-            #     for c in det[:, -1].detach().unique():
-            #         n = (det[:, -1] == c).sum()  # detections per class
-            #         s += '%g %ss, ' % (n, names[int(c)])  # add to string
-
-            #     # Write results
-            #     for *xyxy, conf, cls in reversed(det):
-            #         if save_txt:  # Write to file
-            #             xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-            #             with open(save_path[:save_path.rfind('.')] + '.txt', 'a') as file:
-            #                 file.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
-
-            #         if save_img or view_img:  # Add bbox to image
-            #             label = '%s %.2f' % (names[int(cls)], conf)
-            #             # print(xyxy)
-            #             plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
-
-            # # Print time (inference + NMS)
-            print('%sDone. (%.3fs) Running Avg:(%.4fs)' % (s, t2 - t1, total_time_sum / count))
-
-
-            # Save results (image with detections)
-            if save_img:
-
-                save_file = os.path.basename(save_path).split('.')[0] + '.mat'
-
-                diff_cam = (cam - temp_cam).squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_diff', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': diff_cam})
-
-                cam = cam.squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_cam', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': cam})
-
-                temp_cam = temp_cam.squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_tempcam', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': temp_cam})
-
-                gradient = a
-                gradient = F.interpolate(gradient, size_upsample, mode='bilinear').squeeze().cpu().detach().numpy()
-                new_folder = os.path.join(out + '_gradient', names[index])
-                make_folder(new_folder)
-                savemat(os.path.join(new_folder, save_file), mdict={'cam': gradient})
-
-                # temp_cam = temp_cam - np.min(temp_cam)
-                # temp_cam = temp_cam / np.max(temp_cam)
-                # temp_cam = cv2.applyColorMap(np.uint8(255*temp_cam), cv2.COLORMAP_JET)
-
-                # overlay_temp = im0*0.5 + 0.4*temp_cam
-
-                # print(np.median(cam))
-
-                # cam = cam - np.min(cam)
-                # cam = cam / np.max(cam)
-                # cam = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
-
-                # overlay_cam = im0*0.5 + 0.4*cam
-
-                # gradient[gradient > np.percentile(gradient, 99)] = np.percentile(gradient, 99)
-                # gradient = gradient - np.min(gradient)
-                # gradient = gradient / np.max(gradient)
-                # gradient = cv2.applyColorMap(np.uint8(255*gradient), cv2.COLORMAP_JET)
-
-                # overlay_gradient = im0*0.5 + 0.4*gradient
-
-
-                # cv2.imshow('perturbed', np.uint8(overlay_temp))
-                # cv2.imshow('cam', np.uint8(overlay_cam))
-                # cv2.imshow('grad', np.uint8(overlay_gradient))
-                # cv2.waitKey(0)
-                # cv2.destroyAllWindows()
-
-
-    print('Done. (%.3fs)' % (time.time() - t0))
+    print("Gradcam: {}\n Gradient: {}\n Detect: {}\n".format(total_gradcam_time / count, total_gradient_time / count, total_yolo_time / count))
 
 
 if __name__ == '__main__':
